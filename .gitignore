@@ -1,0 +1,3 @@
+*.pth
+pairwise_fast/pairwise_fusion_kd/log/
+*.pyc
