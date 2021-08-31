@@ -12,9 +12,9 @@
             "console": "integratedTerminal",
             "args": [
                 "--data",
-                "/DATA_SSD/slren/dataset_warp_kd/train/",
+                "/GPFS/data/slren/dataset_warp_kd/train/",
                 "--logpath",
-                "/DATA_SSD/ElwoodLei/log",
+                "/GPFS/data/zxlei/ElwoodLei/log",
                 "--mode",
                 "train",
                 "--batch",

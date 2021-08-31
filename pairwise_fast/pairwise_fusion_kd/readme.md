@@ -34,4 +34,4 @@ CUDA_VISIBLE_DEVICES=3 python train_faf_com_kd.py --data /DATA_SSD/slren/dataset
 --resume_teacher /DATA_SSD/slren/warp2com_weighted_fusion/epoch_100.pth
 
 
-CUDA_VISIBLE_DEVICES=0 python train_faf_com_kd.py --mode val --data /DATA_SSD/slren/dataset_warp_kd/val --nworker 0 --resume /DATA_HDD/slren/log/train_single_seq/2021-05-27_21-40-58/epoch_70.pth --layer 3 --logname pairwise_layer3_wf_70epoch
+CUDA_VISIBLE_DEVICES=2 python train_faf_com_kd.py --mode val --data /GPFS/data/slren/dataset_warp_kd/val --nworker 0 --resume /DB/rhome/slren/data_gpfs/epoch_100.pth --layer 3 --logname /GPFS/data/zxlei/CollaborativePerception/Forcast/LatencyVersion/pairwise_fast/pairwise_fusion_kd/log/test0812/val1 --log 

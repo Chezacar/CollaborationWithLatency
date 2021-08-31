@@ -255,14 +255,15 @@ class CarscenesDataset(Dataset):
         #             if os.path.isdir(os.path.join(self.dataset_root, d))]
         # seq_dirs = sorted(seq_dirs)
         self.seq_dict = {}
-        for agent_num in range(len(agent_list)):
+        self.num_agent = len(agent_list)
+        for agent_num in range(self.num_agent):
             dataset_root_peragent = self.dataset_root + agent_list[agent_num]
             self.seq_dict[agent_num] = self.get_data_dict(dataset_root_peragent)
         # self.seq_files = [os.path.join(seq_dir, f) for seq_dir in seq_dirs for f in os.listdir(seq_dir)
         # #                   if os.path.isfile(os.path.join(seq_dir, f))]
 
         # self.num_sample_seqs = len(self.seq_files)
-        self.num_sample_seqs = len(self.seq_dict[0][0])
+        self.num_sample_seqs = len(self.seq_dict[0][0]) * self.num_agent
         print("The number of {} sequences: {}".format(self.split, self.num_sample_seqs))
         # object information
         self.anchors_map = init_anchors_no_check(self.area_extents, self.voxel_size, self.box_code_size,
@@ -326,9 +327,9 @@ class CarscenesDataset(Dataset):
                 else:
                     # latency_list.append(np.ceil(np.random.exponential(latency_lambda[agent])))
                     latency = int(np.ceil(np.random.exponential(latency_lambda[agent])))
-                    delay_time_stamp = int(time_stamp) + latency
-                    if delay_time_stamp >= 99:
-                        delay_time_stamp = 99
+                    delay_time_stamp = int(time_stamp) - latency
+                    if delay_time_stamp <= 0:
+                        delay_time_stamp = 0
                     scene_time = str(scene_stamp) + '_' + str(delay_time_stamp)
                     file_dict[agent].append(os.path.join(os.path.join(path_pre, 'agent' + str(agent)), scene_time))
         return file_dict
@@ -338,8 +339,8 @@ class CarscenesDataset(Dataset):
         # if idx in self.cache:
         #     gt_dict = self.cache[idx]
         # else:
-        center_agent = int(idx / self.num_sample_seqs)
-        idx = idx % self.num_sample_seqs
+        center_agent = int(idx / self.num_sample_seqs * self.num_agent)
+        idx = idx % int(self.num_sample_seqs / self.num_agent)
         seq_file_list = []
         data_return = {}
         # data_return['padded_voxel_points'] = []

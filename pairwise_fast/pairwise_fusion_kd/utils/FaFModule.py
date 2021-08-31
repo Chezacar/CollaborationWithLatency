@@ -269,7 +269,7 @@ class FaFModule(object):
 		else:
 			return class_selected
 
-	def predict_all(self,data,batch_size,validation=True):
+	def predict_all(self,data,batch_size,validation=True, center_agent = 0):
 		NUM_AGENT = 5
 		bev_seq = data['bev_seq']
 		vis_maps = data['vis_maps']
@@ -282,7 +282,7 @@ class FaFModule(object):
 			result = self.head(x)
 		else:
 			with torch.no_grad():
-				result= self.model(bev_seq, trans_matrices, num_agent_tensor, batch_size=batch_size)
+				result= self.model(bev_seq, trans_matrices, num_agent_tensor, batch_size=batch_size, center_agent = center_agent)
 			# result = self.model(bev_seq,vis=vis_maps,training=False)
         #
 		N = bev_seq.shape[0]

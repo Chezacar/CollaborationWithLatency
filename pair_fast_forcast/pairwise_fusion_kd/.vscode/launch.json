@@ -1,0 +1,38 @@
+{
+    // 使用 IntelliSense 了解相关属性。 
+    // 悬停以查看现有属性的描述。
+    // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: 当前文件",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "args": [
+                "--mode",
+                "train",
+                "--data",
+                "/GPFS/data/slren/dataset_warp_kd/train/",
+                "--logpath",
+                "/GPFS/data/zxlei/CollaborativePerception/Forcast/LatencyVersion/pairwise_fast/pairwise_fusion_kd/log",
+                "--batch",
+                "2",
+                "--nepoch",
+                "100",
+                "--layer",
+                "3",
+                "--logname",
+                "pairwise_layer3_wf_latency10_100epoch",
+                // "--resume",
+                // "/GPFS/data/zxlei/CollaborativePerception/Forcast/LatencyVersion/pairwise_fast/pairwise_fusion_kd/log/train_single_seq/2021-08-05_19-47-55/epoch_100.pth",
+                // "--binary",
+                // "1"//,
+                // "--resume_teacher",
+                // "/DATA_SSD/slren/teacher_aug_batch_4_epoch_100.pth"
+            ],
+            "env": {"CUDA_VISIBLE_DEVICES": "2"}
+        }
+    ]
+}

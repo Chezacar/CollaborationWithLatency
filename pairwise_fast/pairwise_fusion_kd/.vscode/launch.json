@@ -11,22 +11,28 @@
             "program": "${file}",
             "console": "integratedTerminal",
             "args": [
+                "--mode",
+                "train",
                 "--data",
                 "/DATA_SSD/slren/dataset_warp_kd/train/",
                 "--logpath",
-                "/DATA_SSD/ElwoodLei/log",
-                "--mode",
-                "train",
+                "/GPFS/data/zxlei/CollaborativePerception/Forcast/LatencyVersion/pairwise_fast/pairwise_fusion_kd/log",
                 "--batch",
-                "4",
+                "1",
                 "--nepoch",
                 "100",
+                "--layer",
+                "3",
+                "--logname",
+                "pairwise_layer3_wf_latency10_100epoch",
+                // "--resume",
+                // "/GPFS/data/zxlei/CollaborativePerception/Forcast/LatencyVersion/pairwise_fast/pairwise_fusion_kd/log/train_single_seq/2021-08-05_19-47-55/epoch_100.pth",
                 "--binary",
                 "1"//,
                 // "--resume_teacher",
                 // "/DATA_SSD/slren/teacher_aug_batch_4_epoch_100.pth"
             ],
-            "env": {"CUDA_VISIBLE_DEVICES": "1"}
+            "env": {"CUDA_VISIBLE_DEVICES": "2"}
         }
     ]
 }

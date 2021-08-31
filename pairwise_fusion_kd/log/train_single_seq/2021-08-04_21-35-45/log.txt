@@ -3,4 +3,5 @@ command line: train_faf_com_kd.py --data /GPFS/data/slren/dataset_warp_kd/train 
 Namespace(agent_num=5, batch=4, binary=True, data='/GPFS/data/slren/dataset_warp_kd/train', kd=100000, layer=3, log=True, logname=None, logpath='/GPFS/data/zxlei/CollaborativePerception/Forcast/LatencyVersion/pairwise_fusion_kd/log', lr=0.001, mode='train', model_only=False, nepoch=100, nworker=1, only_det=True, resume='', resume_teacher='/DATA_SSD/slren/teacher_aug_batch_4_epoch_100.pth', visualization=True)
 
 epoch: 1, lr: 0.001	Total loss 5902.087402 (12255.026682)	classification Loss 578.471985 (1185.021936)	Localization Loss 5323.615234 (11070.004761)	Take 146528.50441408157 s
-epoch: 2, lr: 0.001	
+epoch: 2, lr: 0.001	Total loss 3941.696289 (4889.487286)	classification Loss 425.776703 (487.748912)	Localization Loss 3515.919678 (4401.738386)	Take 153511.3067483902 s
+epoch: 3, lr: 0.001	

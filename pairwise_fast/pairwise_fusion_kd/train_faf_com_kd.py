@@ -116,7 +116,7 @@ def main(config, config_global, args):
                                      reg_loss_mask_example, \
                                      anchors_map_example, motion_one_hot_example, motion_mask_example, vis_maps_example,
                                      dataset_root=args.data, config=config, config_global=config_global, agent_list = ['/agent0', '/agent1', '/agent2', '/agent3', '/agent4'],
-                                     split='train')
+                                     split='train', latency_lambda = [5,5,5,5,5])
 
         # trainset0 = CarscenesDataset(padded_voxel_points_example, label_one_hot_example, reg_target_example,
         #                              reg_loss_mask_example, \
@@ -156,43 +156,50 @@ def main(config, config_global, args):
         padded_voxel_points_example, label_one_hot_example, reg_target_example, reg_loss_mask_example, \
         anchors_map_example, motion_one_hot_example, motion_mask_example, vis_maps_example, _, _ = data_nuscenes[0]
 
-        valset0 = CarscenesDataset(padded_voxel_points_example, label_one_hot_example, reg_target_example,
-                                   reg_loss_mask_example, \
-                                   anchors_map_example, motion_one_hot_example, motion_mask_example, vis_maps_example,
-                                   dataset_root=args.data + '/agent0', config=config, config_global=config_global,
-                                   split='val', val=True)
 
-        valset1 = CarscenesDataset(padded_voxel_points_example, label_one_hot_example, reg_target_example,
-                                   reg_loss_mask_example, \
-                                   anchors_map_example, motion_one_hot_example, motion_mask_example, vis_maps_example,
-                                   dataset_root=args.data + '/agent1', config=config, config_global=config_global,
-                                   split='val', val=True)
+        valset = CarscenesDataset(padded_voxel_points_example, label_one_hot_example, reg_target_example,
+                                     reg_loss_mask_example, \
+                                     anchors_map_example, motion_one_hot_example, motion_mask_example, vis_maps_example,
+                                     dataset_root=args.data, config=config, config_global=config_global, agent_list = ['/agent0', '/agent1', '/agent2', '/agent3', '/agent4'],
+                                     split='val', val=True)
+        # valset0 = CarscenesDataset(padded_voxel_points_example, label_one_hot_example, reg_target_example,
+        #                            reg_loss_mask_example, \
+        #                            anchors_map_example, motion_one_hot_example, motion_mask_example, vis_maps_example,
+        #                            dataset_root=args.data + '/agent0', config=config, config_global=config_global,
+        #                            split='val', val=True)
 
-        valset2 = CarscenesDataset(padded_voxel_points_example, label_one_hot_example, reg_target_example,
-                                   reg_loss_mask_example, \
-                                   anchors_map_example, motion_one_hot_example, motion_mask_example, vis_maps_example,
-                                   dataset_root=args.data + '/agent2', config=config, config_global=config_global,
-                                   split='val', val=True)
+        # valset1 = CarscenesDataset(padded_voxel_points_example, label_one_hot_example, reg_target_example,
+        #                            reg_loss_mask_example, \
+        #                            anchors_map_example, motion_one_hot_example, motion_mask_example, vis_maps_example,
+        #                            dataset_root=args.data + '/agent1', config=config, config_global=config_global,
+        #                            split='val', val=True)
 
-        valset3 = CarscenesDataset(padded_voxel_points_example, label_one_hot_example, reg_target_example,
-                                   reg_loss_mask_example, \
-                                   anchors_map_example, motion_one_hot_example, motion_mask_example, vis_maps_example,
-                                   dataset_root=args.data + '/agent3', config=config, config_global=config_global,
-                                   split='val', val=True)
+        # valset2 = CarscenesDataset(padded_voxel_points_example, label_one_hot_example, reg_target_example,
+        #                            reg_loss_mask_example, \
+        #                            anchors_map_example, motion_one_hot_example, motion_mask_example, vis_maps_example,
+        #                            dataset_root=args.data + '/agent2', config=config, config_global=config_global,
+        #                            split='val', val=True)
 
-        valset4 = CarscenesDataset(padded_voxel_points_example, label_one_hot_example, reg_target_example,
-                                   reg_loss_mask_example, \
-                                   anchors_map_example, motion_one_hot_example, motion_mask_example, vis_maps_example,
-                                   dataset_root=args.data + '/agent4', config=config, config_global=config_global,
-                                   split='val', val=True)
+        # valset3 = CarscenesDataset(padded_voxel_points_example, label_one_hot_example, reg_target_example,
+        #                            reg_loss_mask_example, \
+        #                            anchors_map_example, motion_one_hot_example, motion_mask_example, vis_maps_example,
+        #                            dataset_root=args.data + '/agent3', config=config, config_global=config_global,
+        #                            split='val', val=True)
 
-        valloader0 = torch.utils.data.DataLoader(valset0, batch_size=1, shuffle=False, num_workers=1)
-        valloader1 = torch.utils.data.DataLoader(valset1, batch_size=1, shuffle=False, num_workers=1)
-        valloader2 = torch.utils.data.DataLoader(valset2, batch_size=1, shuffle=False, num_workers=1)
-        valloader3 = torch.utils.data.DataLoader(valset3, batch_size=1, shuffle=False, num_workers=1)
-        valloader4 = torch.utils.data.DataLoader(valset4, batch_size=1, shuffle=False, num_workers=1)
+        # valset4 = CarscenesDataset(padded_voxel_points_example, label_one_hot_example, reg_target_example,
+        #                            reg_loss_mask_example, \
+        #                            anchors_map_example, motion_one_hot_example, motion_mask_example, vis_maps_example,
+        #                            dataset_root=args.data + '/agent4', config=config, config_global=config_global,
+        #                            split='val', val=True)
 
-        print("Validation dataset size:", len(valset0))
+        valloader = torch.utils.data.DataLoader(valset, batch_size=1, shuffle=False, num_workers=1)
+        # valloader0 = torch.utils.data.DataLoader(valset0, batch_size=1, shuffle=False, num_workers=1)
+        # valloader1 = torch.utils.data.DataLoader(valset1, batch_size=1, shuffle=False, num_workers=1)
+        # valloader2 = torch.utils.data.DataLoader(valset2, batch_size=1, shuffle=False, num_workers=1)
+        # valloader3 = torch.utils.data.DataLoader(valset3, batch_size=1, shuffle=False, num_workers=1)
+        # valloader4 = torch.utils.data.DataLoader(valset4, batch_size=1, shuffle=False, num_workers=1)
+
+        print("Validation dataset size:", len(valset))
 
     # build model
     if config.MGDA:
@@ -320,7 +327,12 @@ def main(config, config_global, args):
             # trainloader4 = torch.utils.data.DataLoader(trainset4, shuffle=False, batch_sampler=train_sampler, num_workers=num_workers)
 
             # for sample0, sample1, sample2, sample3, sample4 in tqdm(zip(trainloader0, trainloader1, trainloader2, trainloader3, trainloader4)):
+            time_start = time.time()
             for sample in tqdm(trainloader):
+                time_end = time.time()
+                time_c = time_end - time_start
+                print(time_c)
+                time_start = time.time()
                 # padded_voxel_points0, padded_voxel_points_teacher0, label_one_hot0, reg_target0, reg_loss_mask0, anchors_map0, vis_maps0, target_agent_id0, num_sensor0, trans_matrices0,center_agent  = sample
                 padded_voxel_points0, padded_voxel_points_teacher0, label_one_hot0, reg_target0, reg_loss_mask0, anchors_map0, vis_maps0, target_agent_id0, num_sensor0, trans_matrices0 = sample[0]['padded_voxel_points'] ,sample[0]['padded_voxel_points_teacher'] ,sample[0]['label_one_hot'] ,sample[0]['reg_target'] ,sample[0]['reg_loss_mask'] ,sample[0]['anchors_map'] ,sample[0]['vis_maps'] ,sample[0]['target_agent_id'] ,sample[0]['num_sensor'] ,sample[0]['trans_matrices']
                 padded_voxel_points1, padded_voxel_points_teacher1, label_one_hot1, reg_target1, reg_loss_mask1, anchors_map1, vis_maps1, target_agent_id1, num_sensor1, trans_matrices1 = sample[1]['padded_voxel_points'] ,sample[1]['padded_voxel_points_teacher'] ,sample[1]['label_one_hot'] ,sample[1]['reg_target'] ,sample[1]['reg_loss_mask'] ,sample[1]['anchors_map'] ,sample[1]['vis_maps'] ,sample[1]['target_agent_id'] ,sample[1]['num_sensor'] ,sample[1]['trans_matrices']
@@ -377,7 +389,9 @@ def main(config, config_global, args):
                 running_loss_disp.update(loss)
                 running_loss_class.update(cls_loss)
                 running_loss_loc.update(loc_loss)
-
+                time_end = time.time()
+                time_c = time_end- time_start
+                print(time_c)
                 step_ct += 1
                 print("\nEpoch {}, Step {}".format(epoch, step_ct))
                 print("Running total loss: {}".format(running_loss_disp.avg))
@@ -441,15 +455,17 @@ def main(config, config_global, args):
         det_results_local = [[] for i in range(5)]
         annotations_local = [[] for i in range(5)]
 
-        for sample0, sample1, sample2, sample3, sample4 in zip(valloader0, valloader1, valloader2, valloader3,
-                                                               valloader4):
+        # for sample0, sample1, sample2, sample3, sample4 in zip(valloader0, valloader1, valloader2, valloader3,
+        #                                                        valloader4):
+        for sample in valloader:    
             t = time.time()
+            center_agent = sample['center_agent']
             padded_voxel_points0, label_one_hot0, reg_target0, reg_loss_mask0, anchors_map0, vis_maps0, gt_max_iou0, filename0, \
-            target_agent_id0, num_sensor0, trans_matrices0, padded_voxel_points_global, reg_target_global, anchors_map_global, gt_max_iou_global, trans_matrices_map = sample0
-            padded_voxel_points1, label_one_hot1, reg_target1, reg_loss_mask1, anchors_map1, vis_maps1, gt_max_iou1, filename1, target_agent_id1, num_sensor1, trans_matrices1, _, _, _, _, _ = sample1
-            padded_voxel_points2, label_one_hot2, reg_target2, reg_loss_mask2, anchors_map2, vis_maps2, gt_max_iou2, filename2, target_agent_id2, num_sensor2, trans_matrices2, _, _, _, _, _ = sample2
-            padded_voxel_points3, label_one_hot3, reg_target3, reg_loss_mask3, anchors_map3, vis_maps3, gt_max_iou3, filename3, target_agent_id3, num_sensor3, trans_matrices3, _, _, _, _, _ = sample3
-            padded_voxel_points4, label_one_hot4, reg_target4, reg_loss_mask4, anchors_map4, vis_maps4, gt_max_iou4, filename4, target_agent_id4, num_sensor4, trans_matrices4, _, _, _, _, _ = sample4
+            target_agent_id0, num_sensor0, trans_matrices0, padded_voxel_points_global, reg_target_global, anchors_map_global, gt_max_iou_global, trans_matrices_map = sample[0]['padded_voxel_points'] ,sample[0]['label_one_hot'] ,sample[0]['reg_target'] ,sample[0]['reg_loss_mask'] ,sample[0]['anchors_map'] ,sample[0]['vis_maps'], sample[0]['gt_max_iou'], sample[0]['filename'], sample[0]['target_agent_id'] ,sample[0]['num_sensor'] ,sample[0]['trans_matrices'],sample[0]['padded_voxel_points_global'],sample[0]['reg_target_global'],sample[0]['anchors_map_global'],sample[0]['gt_max_iou_global'],sample[0]['trans_matrices_map']
+            padded_voxel_points1, label_one_hot1, reg_target1, reg_loss_mask1, anchors_map1, vis_maps1, gt_max_iou1, filename1, target_agent_id1, num_sensor1, trans_matrices1, _, _, _, _, _ = sample[1]['padded_voxel_points'], sample[1]['label_one_hot'] ,sample[1]['reg_target'] ,sample[1]['reg_loss_mask'] ,sample[1]['anchors_map'] ,sample[1]['vis_maps'], sample[1]['gt_max_iou'], sample[1]['filename'], sample[1]['target_agent_id'] ,sample[1]['num_sensor'] ,sample[1]['trans_matrices'],sample[1]['padded_voxel_points_global'],sample[1]['reg_target_global'],sample[1]['anchors_map_global'],sample[1]['gt_max_iou_global'],sample[1]['trans_matrices_map']
+            padded_voxel_points2, label_one_hot2, reg_target2, reg_loss_mask2, anchors_map2, vis_maps2, gt_max_iou2, filename2, target_agent_id2, num_sensor2, trans_matrices2, _, _, _, _, _ = sample[2]['padded_voxel_points'], sample[2]['label_one_hot'] ,sample[2]['reg_target'] ,sample[2]['reg_loss_mask'] ,sample[2]['anchors_map'] ,sample[2]['vis_maps'], sample[2]['gt_max_iou'], sample[2]['filename'], sample[2]['target_agent_id'] ,sample[2]['num_sensor'] ,sample[2]['trans_matrices'],sample[2]['padded_voxel_points_global'],sample[2]['reg_target_global'],sample[2]['anchors_map_global'],sample[2]['gt_max_iou_global'],sample[2]['trans_matrices_map']
+            padded_voxel_points3, label_one_hot3, reg_target3, reg_loss_mask3, anchors_map3, vis_maps3, gt_max_iou3, filename3, target_agent_id3, num_sensor3, trans_matrices3, _, _, _, _, _ = sample[3]['padded_voxel_points'] ,sample[3]['label_one_hot'] ,sample[3]['reg_target'] ,sample[3]['reg_loss_mask'] ,sample[3]['anchors_map'] ,sample[3]['vis_maps'], sample[3]['gt_max_iou'], sample[3]['filename'], sample[3]['target_agent_id'] ,sample[3]['num_sensor'] ,sample[3]['trans_matrices'],sample[3]['padded_voxel_points_global'],sample[3]['reg_target_global'],sample[3]['anchors_map_global'],sample[3]['gt_max_iou_global'],sample[3]['trans_matrices_map']
+            padded_voxel_points4, label_one_hot4, reg_target4, reg_loss_mask4, anchors_map4, vis_maps4, gt_max_iou4, filename4, target_agent_id4, num_sensor4, trans_matrices4, _, _, _, _, _ = sample[4]['padded_voxel_points'],sample[4]['label_one_hot'] ,sample[4]['reg_target'] ,sample[4]['reg_loss_mask'] ,sample[4]['anchors_map'] ,sample[4]['vis_maps'], sample[4]['gt_max_iou'], sample[4]['filename'], sample[4]['target_agent_id'] ,sample[4]['num_sensor'] ,sample[4]['trans_matrices'],sample[4]['padded_voxel_points_global'],sample[4]['reg_target_global'],sample[4]['anchors_map_global'],sample[4]['gt_max_iou_global'],sample[4]['trans_matrices_map']
 
             padded_voxel_points_list = [padded_voxel_points0, padded_voxel_points1, padded_voxel_points2,
                                         padded_voxel_points3, padded_voxel_points4]
@@ -487,7 +503,7 @@ def main(config, config_global, args):
             data['num_agent'] = num_agent.to(device)
             data['trans_matrices'] = trans_matrices
 
-            loss, cls_loss, loc_loss, result = fafmodule.predict_all(data, 1)
+            loss, cls_loss, loc_loss, result = fafmodule.predict_all(data, 1, True, center_agent)
 
             # local qualitative evaluation
             for k in range(num_sensor0):

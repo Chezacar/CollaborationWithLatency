@@ -567,7 +567,7 @@ class FaFMIMONet_256_32_32(nn.Module):
         self.agent_num = 5
         self.shared_img_encoder = shared_img_encoder
 
-        self.adafusion = pairfusionlayer_3(input_channel=256)
+        self.adafusion = pairfusionlayer_2(input_channel=256)
 
 
         # Detection decoder
@@ -607,7 +607,10 @@ class FaFMIMONet_256_32_32(nn.Module):
         local_com_mat_update = torch.cat(tuple(feat_list), 1) # to avoid the inplace operation
 
         for b in range(batch_size):
-            center_agent_int = int(center_agent[b])
+            try: 
+                center_agent_int = int(center_agent[b])
+            except:
+                center_agent_int = center_agent
             num_agent = num_agent_tensor[b, center_agent_int]
             if num_agent == 0:
                 break
