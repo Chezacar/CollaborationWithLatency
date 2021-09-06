@@ -303,6 +303,7 @@ def main(config, config_global, args):
         indices = list(range(n_train))
         data_cache = {}
         for epoch in range(start_epoch, num_epochs + 1):
+            # trainset.seq_dict[0] = trainset.get_data_dict(trainset.dataset_root_peragent)
             if config.MGDA:
                 lr = fafmodule.optimizer_head.param_groups[0]['lr']
             else:
@@ -328,7 +329,7 @@ def main(config, config_global, args):
             step_ct = 1
             t = time.time()
 
-            random.shuffle(indices)
+            # random.shuffle(indices)
             train_sampler = torch.utils.data.sampler.BatchSampler(torch.utils.data.sampler.SubsetRandomSampler(indices),
                                                                   batch_size=batch_size, drop_last=False)
 
@@ -339,15 +340,10 @@ def main(config, config_global, args):
             # trainloader4 = torch.utils.data.DataLoader(trainset4, shuffle=False, batch_sampler=train_sampler, num_workers=num_workers)
 
             # for sample0, sample1, sample2, sample3, sample4 in tqdm(zip(trainloader0, trainloader1, trainloader2, trainloader3, trainloader4)):
-            trainset.time_temp = time.time()
             time_10 = time.time()
             for sample in tqdm(trainloader):
-                print("返回所花时间:",time.time() - trainset.time_temp)
-                time_8 = time.time()
-                print("dataloader读取时间", time_8-time_10)
-                # time_c = time_8- time_start
-                # print(time_c)
-                time_9 = time.time()
+                time_t0 = time.time()
+                print("返回时间", time_t0 - trainset.time_4)
                 # padded_voxel_points0, padded_voxel_points_teacher0, label_one_hot0, reg_target0, reg_loss_mask0, anchors_map0, vis_maps0, target_agent_id0, num_sensor0, trans_matrices0,center_agent  = sample
                 padded_voxel_points0, padded_voxel_points_teacher0, label_one_hot0, reg_target0, reg_loss_mask0, anchors_map0, vis_maps0, target_agent_id0, num_sensor0, trans_matrices0, filename0 = sample[0]['padded_voxel_points'] ,sample[0]['padded_voxel_points_teacher'] ,sample[0]['label_one_hot'] ,sample[0]['reg_target'] ,sample[0]['reg_loss_mask'] ,sample[0]['anchors_map'] ,sample[0]['vis_maps'] ,sample[0]['target_agent_id'] ,sample[0]['num_sensor'] ,sample[0]['trans_matrices'], sample[0]['filename']
                 padded_voxel_points1, padded_voxel_points_teacher1, label_one_hot1, reg_target1, reg_loss_mask1, anchors_map1, vis_maps1, target_agent_id1, num_sensor1, trans_matrices1, filename1 = sample[1]['padded_voxel_points'] ,sample[1]['padded_voxel_points_teacher'] ,sample[1]['label_one_hot'] ,sample[1]['reg_target'] ,sample[1]['reg_loss_mask'] ,sample[1]['anchors_map'] ,sample[1]['vis_maps'] ,sample[1]['target_agent_id'] ,sample[1]['num_sensor'] ,sample[1]['trans_matrices'], sample[1]['filename']
@@ -355,21 +351,24 @@ def main(config, config_global, args):
                 padded_voxel_points3, padded_voxel_points_teacher3, label_one_hot3, reg_target3, reg_loss_mask3, anchors_map3, vis_maps3, target_agent_id3, num_sensor3, trans_matrices3, filename3 = sample[3]['padded_voxel_points'] ,sample[3]['padded_voxel_points_teacher'] ,sample[3]['label_one_hot'] ,sample[3]['reg_target'] ,sample[3]['reg_loss_mask'] ,sample[3]['anchors_map'] ,sample[3]['vis_maps'] ,sample[3]['target_agent_id'] ,sample[3]['num_sensor'] ,sample[3]['trans_matrices'], sample[3]['filename']
                 padded_voxel_points4, padded_voxel_points_teacher4, label_one_hot4, reg_target4, reg_loss_mask4, anchors_map4, vis_maps4, target_agent_id4, num_sensor4, trans_matrices4, filename4 = sample[4]['padded_voxel_points'] ,sample[4]['padded_voxel_points_teacher'] ,sample[4]['label_one_hot'] ,sample[4]['reg_target'] ,sample[4]['reg_loss_mask'] ,sample[4]['anchors_map'] ,sample[4]['vis_maps'] ,sample[4]['target_agent_id'] ,sample[4]['num_sensor'] ,sample[4]['trans_matrices'], sample[4]['filename']
                 center_agent = sample['center_agent']
-
+                time_t1 = time.time()
+                print("计时点1", time_t1 - time_t0)
                 padded_voxel_points_list = [padded_voxel_points0, padded_voxel_points1, padded_voxel_points2, padded_voxel_points3, padded_voxel_points4]
                 label_one_hot_list = [label_one_hot0, label_one_hot1, label_one_hot2, label_one_hot3, label_one_hot4]
                 reg_target_list = [reg_target0, reg_target1, reg_target2, reg_target3, reg_target4]
                 reg_loss_mask_list = [reg_loss_mask0, reg_loss_mask1, reg_loss_mask2, reg_loss_mask3, reg_loss_mask4]
                 anchors_map_list = [anchors_map0, anchors_map1, anchors_map2, anchors_map3, anchors_map4]
                 vis_maps_list = [vis_maps0, vis_maps1, vis_maps2, vis_maps3, vis_maps4]
-
+                time_t2 = time.time()
+                print("计时点2", time_t2 - time_t1)
                 padded_voxel_points = torch.cat(tuple(padded_voxel_points_list), 0)# 因为以前是tensor的list 所以可以 
                 label_one_hot = torch.cat(tuple(label_one_hot_list), 0)
                 reg_target = torch.cat(tuple(reg_target_list), 0)
                 reg_loss_mask = torch.cat(tuple(reg_loss_mask_list), 0)
                 anchors_map = torch.cat(tuple(anchors_map_list), 0)
                 vis_maps = torch.cat(tuple(vis_maps_list), 0)
-
+                time_t3 = time.time()
+                print("计时点3", time_t3 - time_t2)
                 target_agent_id_list = [target_agent_id0, target_agent_id1, target_agent_id2, target_agent_id3, target_agent_id4]
                 num_agent_list = [num_sensor0[-1], num_sensor1[-1], num_sensor2[-1], num_sensor3[-1], num_sensor4[-1]]
                 trans_matrices_list = [trans_matrices0, trans_matrices1, trans_matrices2, trans_matrices3, trans_matrices4]
@@ -377,31 +376,37 @@ def main(config, config_global, args):
                 trans_matrices = torch.stack(tuple(trans_matrices_list), 1)  #
                 target_agent_ids = torch.stack(tuple(target_agent_id_list), 1)
                 num_agent = torch.stack(tuple(num_agent_list), 1)
-
+                time_t4 = time.time()
+                print("计时点4", time_t4 - time_t3)
                 data = {}
                 data['file_name'] = [filename0, filename1, filename2, filename3, filename4]
                 data['bev_seq'] = padded_voxel_points.to(device)
+                time_t5_0 = time.time()
+                print("计时点5_0", time_t5_0 - time_t4)
                 data['labels'] = label_one_hot.to(device)
                 data['reg_targets'] = reg_target.to(device)
                 data['anchors'] = anchors_map.to(device)
                 data['reg_loss_mask'] = reg_loss_mask.to(device).type(dtype=torch.bool)
                 data['vis_maps'] = vis_maps.to(device)
-
+                time_t5_1 = time.time()
+                print("计时点5_1", time_t5_1 - time_t5_0)
                 data['target_agent_ids'] = target_agent_ids.to(device)
                 data['num_agent'] = num_agent.to(device)
                 data['trans_matrices'] = trans_matrices
-
+                time_8 = time.time()
+                time_c = time_8- time_10
+                time_t5 = time.time()
+                print("计时点5", time_t5 - time_t4)
+                print("数据读取时间", time_c)
+                print("从loader到网络", time_8-trainset.time_4)
+                time_9 = time.time()
                 if config.KD:
                     padded_voxel_points_list_teacher = [padded_voxel_points_teacher0, padded_voxel_points_teacher1, padded_voxel_points_teacher2, padded_voxel_points_teacher3, padded_voxel_points_teacher4]
                     padded_voxel_points_teacher = torch.cat(tuple(padded_voxel_points_list_teacher), 0)
                     data['bev_seq_teacher'] = padded_voxel_points_teacher.to(device)
                     data['kd_weight'] = args.kd
                     data['layer'] = layer
-                
-                time_9 = time.time()
-                time_d = time_9- time_8
-                print("除了loader之外的预处理时间", time_d)
-                
+
                 if config.KD:
                     loss, cls_loss, loc_loss,kd_loss = fafmodule.step(data, batch_size, center_agent)
                 else:
@@ -409,17 +414,17 @@ def main(config, config_global, args):
                 running_loss_disp.update(loss)
                 running_loss_class.update(cls_loss)
                 running_loss_loc.update(loc_loss)
+                time_10 = time.time()
+                print("total_time:", time_10 - time_9)
                 step_ct += 1
                 print("\nEpoch {}, Step {}".format(epoch, step_ct))
                 print("Running total loss: {}".format(running_loss_disp.avg))
                 print("Running total cls loss: {}".format(running_loss_class.avg))
                 print("Running total loc loss: {}".format(running_loss_loc.avg))
-                time_10 = time.time()
-                print("每个step的训练时间", time_10 - time_9)
 
             print("{}\t{}\t{}\t Takes {} s\n".format(running_loss_disp, running_loss_class, running_loss_loc,
                                                      str(time.time() - t)))
-            
+
             # save model
             if need_log:
                 if config.KD:

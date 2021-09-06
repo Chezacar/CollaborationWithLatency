@@ -1,5 +1,0 @@
-GPU number: 1
-command line: train_faf_com_kd.py --data /DATA_SSD/slren/dataset_warp_kd/train --logpath /GPFS/data/zxlei/CollaborativePerception/Forcast/LatencyVersion/pairwise_fast/pairwise_fusion_kd/log --mode train --lr 0.001 --batch 4 --nepoch 100 --binary 1 --resume_teacher /DATA_SSD/slren/teacher_aug_batch_4_epoch_100.pth --log
-Namespace(batch=4, binary=True, data='/DATA_SSD/slren/dataset_warp_kd/train', kd=100000, layer=3, log=True, logname=None, logpath='/GPFS/data/zxlei/CollaborativePerception/Forcast/LatencyVersion/pairwise_fast/pairwise_fusion_kd/log', lr=0.001, mode='train', model_only=False, nepoch=100, nworker=0, only_det=True, resume='', resume_teacher='/DATA_SSD/slren/teacher_aug_batch_4_epoch_100.pth', visualization=True)
-
-epoch: 1, lr: 0.001	

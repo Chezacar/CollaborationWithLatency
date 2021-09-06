@@ -27,7 +27,7 @@
                 // "--resume_teacher",
                 // "/DATA_SSD/slren/teacher_aug_batch_4_epoch_100.pth"
             ],
-            "env": {"CUDA_VISIBLE_DEVICES": "3"}
+            "env": {"CUDA_VISIBLE_DEVICES": "2,3"}
         }
     ]
 }

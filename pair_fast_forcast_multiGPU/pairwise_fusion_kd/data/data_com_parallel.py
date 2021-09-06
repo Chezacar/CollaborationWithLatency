@@ -1,3 +1,6 @@
+import concurrent
+
+from numpy.lib.npyio import load
 from data.obj_util import *
 from torch.utils.data import Dataset
 import numpy as np
@@ -79,8 +82,9 @@ class NuscenesDataset(Dataset):
         self.label_one_hot_shape = (self.map_dims[0],self.map_dims[1],len(self.anchor_size),self.category_num)
         self.dims = config.map_dims
         self.num_past_pcs = config.num_past_pcs
-        manager = Manager()
-        self.cache = manager.dict()
+        # manager = Manager()
+        # self.cache = manager.dict()
+        self.cache = {}
         # self.cache_size = cache_size if split == 'train' else 0
         self.cache_size = cache_size
 
@@ -265,8 +269,8 @@ class CarscenesDataset(Dataset):
         self.num_agent = len(agent_list)
         # for agent_num in range(self.num_agent):
         for agent_num in range(1):
-            dataset_root_peragent = self.dataset_root + agent_list[agent_num]
-            self.seq_dict[agent_num] = self.get_data_dict(dataset_root_peragent)
+            self.dataset_root_peragent = self.dataset_root + agent_list[agent_num]
+            self.seq_dict[agent_num] = self.get_data_dict(self.dataset_root_peragent)
         # self.seq_files = [os.path.join(seq_dir, f) for seq_dir in seq_dirs for f in os.listdir(seq_dir)
         # #                   if os.path.isfile(os.path.join(seq_dir, f))]
 
@@ -285,8 +289,9 @@ class CarscenesDataset(Dataset):
         self.label_one_hot_shape = (self.map_dims[0], self.map_dims[1], len(self.anchor_size), self.category_num)
         self.dims = config.map_dims
         self.num_past_pcs = config.num_past_pcs
-        manager = Manager()
-        self.cache = manager.dict()
+        # manager = Manager()
+        # self.cache = manager.dict()
+        self.cache = {}
         # for i in range(self.num_agent):
         #     self.cache[i] = {}
         # self.cache_size = cache_size if split == 'train' else 0
@@ -327,7 +332,7 @@ class CarscenesDataset(Dataset):
         for file_name in os.listdir(file_path):
             path_item = os.path.join(file_path, file_name).strip('/').split('/')
             scene_stamp, time_stamp = path_item[-1].split('_')
-            if int(time_stamp) >= 99:
+            if int(time_stamp) >= 10:
                 agent_id = int(path_item[-2][-1])
                 del path_item[-2:]
                 path_pre = '/'
@@ -349,58 +354,15 @@ class CarscenesDataset(Dataset):
                 continue
         return file_dict
 
-    def per_agent_load(self, para):
-        [idx, agent, time_1] = para
-        time_2 = time.time()
-        # print(agent, '号计时点2:', time_2 - time_1)
-        data_return_peragent = {}
-        seq_file_new = self.seq_dict[self.center_agent][agent][idx]
-        scene_id, inscene_id = seq_file_new.split('/')[-1].split('_')
-        inscene_id = int(inscene_id)
-        load_list = []
-        seq_scene_root = seq_file_new.strip(seq_file_new.split('/')[-1])
-        for iter in range(self.forcast_num):
-            new_inscene_id = inscene_id - self.forcast_num + iter + 1
-            if new_inscene_id <= 0:
-                new_inscene_id = 0
-            load_list.append(os.path.join(seq_scene_root, scene_id + '_' + str(new_inscene_id)))
-        # print(load_list)
-        if self.val:
-            data_return_peragent['padded_voxel_points'] = []
-            data_return_peragent['label_one_hot'] = []
-            data_return_peragent['reg_target'] = []
-            data_return_peragent['reg_loss_mask'] = []
-            data_return_peragent['anchors_map'] = []
-            data_return_peragent['vis_maps'] = []
-            data_return_peragent['gt_max_iou'] =  []
-            data_return_peragent['filename'] = ''
-            data_return_peragent['target_agent_id'] = []
-            data_return_peragent['num_sensor'] = []
-            data_return_peragent['trans_matrices'] = []
-            data_return_peragent['padded_voxel_points_global'] = []
-            data_return_peragent['reg_target_global'] = []
-            data_return_peragent['anchors_map_global'] = []
-            data_return_peragent['gt_max_iou_global'] = []
-            data_return_peragent['trans_matrices_map'] = []
-        else:
-            data_return_peragent['padded_voxel_points'] = []
-            # data_return[agent]['padded_voxel_points_teacher'] = []
-            # data_return[agent]['label_one_hot'] = []
-            # data_return[agent]['reg_target'] = []
-            # data_return[agent]['reg_loss_mask'] = []
-            # data_return[agent]['anchors_map'] = []
-            # data_return[agent]['vis_maps'] = []
-            # data_return[agent]['gt_max_iou'] =  []
-            data_return_peragent['trans_matrices'] = []
-            data_return_peragent['filename'] = ''
-            data_return_peragent['target_agent_id'] = []
-            data_return_peragent['num_sensor'] = []
-
-        for seq_file in load_list:
-            write_flag = False
-            if seq_file == load_list[-1]:
-                write_flag = True
-        # seq_file = self.seq_files[idx]
+    def per_scene_load(self, para):
+        data_return = {}
+        cache = {}
+        [agent, index, seq_file] = para
+        if seq_file not in self.cache.keys():
+            # write_flag = False
+            # if index == 0:
+            #     write_flag = True
+            # seq_file = self.seq_files[idx]
             empty_flag = False
             gt_data_handle = np.load(os.path.join(seq_file, '0.npy'), allow_pickle=True)
             if gt_data_handle == 0:
@@ -414,81 +376,68 @@ class CarscenesDataset(Dataset):
                 reg_loss_mask = np.zeros(self.reg_loss_mask_example.shape).astype(self.reg_loss_mask_example.dtype)
                 motion_mask = np.zeros(self.motion_mask_example.shape).astype(self.motion_mask_example.dtype)
                 if self.val:
-                    # return padded_voxel_points, label_one_hot, \
-                    #     reg_target, reg_loss_mask, anchors_map, vis_maps, [
-                    #         {"gt_box": [[0, 0, 0, 0], [0, 0, 0, 0]]}], [seq_file], \
-                    #     0, 0, np.zeros((5, 4, 4)), 0, 0, 0, 0, 0
-                    # data_return[agent]['padded_voxel_points'] = padded_voxel_points
-                    # data_return[agent]['label_one_hot'] = label_one_hot
-                    # data_return[agent]['reg_target'] = reg_target
-                    # data_return[agent]['reg_loss_mask'] = reg_loss_mask
-                    # data_return[agent]['anchors_map'] = anchors_map
-                    # data_return[agent]['vis_maps'] = vis_maps
-                    # data_return[agent]['gt_max_iou'] =  [{"gt_box": [[0, 0, 0, 0], [0, 0, 0, 0]]}]
-                    # data_return[agent]['filename'] = [seq_file]
-                    # data_return[agent]['target_agent_id'] = 0
-                    # data_return[agent]['num_sensor'] = 0
-                    # data_return[agent]['trans_matrices'] = np.zeros((5, 4, 4))
-                    # data_return[agent]['padded_voxel_points_global'] = 0
-                    # data_return[agent]['reg_target_global'] = 0
-                    # data_return[agent]['anchors_map_global'] = 0
-                    # data_return[agent]['gt_max_iou_global'] = 0
-                    # data_return[agent]['trans_matrices_map'] = 0
-                    data_return_peragent['padded_voxel_points'].append(padded_voxel_points)
-                    data_return_peragent['label_one_hot'].append(label_one_hot)
-                    data_return_peragent['reg_target'].append(reg_target)
-                    data_return_peragent['reg_loss_mask'].append(reg_loss_mask)
-                    data_return_peragent['anchors_map'].append(anchors_map)
-                    data_return_peragent['vis_maps'].append(vis_maps)
-                    data_return_peragent['gt_max_iou'].append([{"gt_box": [[0, 0, 0, 0], [0, 0, 0, 0]]}])
-                    data_return_peragent['filename'] = data_return_peragent['filename'] + seq_file + ','
-                    data_return_peragent['target_agent_id'].append(0)
-                    data_return_peragent['num_sensor'].append(0)
-                    data_return_peragent['trans_matrices'].append(np.zeros((5, 4, 4)))
-                    data_return_peragent['padded_voxel_points_global'].append(0)
-                    data_return_peragent['reg_target_global'].append(0)
-                    data_return_peragent['anchors_map_global'].append(0)
-                    data_return_peragent['gt_max_iou_global'].append(0)
-                    data_return_peragent['trans_matrices_map'].append(0)
-                    continue
+                    data_return['padded_voxel_points'] = (padded_voxel_points)
+                    data_return['label_one_hot'] = label_one_hot
+                    data_return['reg_target'] = reg_target
+                    data_return['reg_loss_mask'] = reg_loss_mask
+                    data_return['anchors_map'] = anchors_map
+                    data_return['vis_maps'] = vis_maps
+                    data_return['gt_max_iou'] = [{"gt_box": [[0, 0, 0, 0], [0, 0, 0, 0]]}]
+                    data_return['filename'] = seq_file
+                    data_return['target_agent_id'] = 0
+                    data_return['num_sensor'] = 0
+                    data_return['trans_matrices'] = np.zeros((5, 4, 4))
+                    data_return['padded_voxel_points_global'] = 0
+                    data_return['reg_target_global'] = 0
+                    data_return['anchors_map_global'] = 0
+                    data_return['gt_max_iou_global'] = 0
+                    data_return['trans_matrices_map'] = 0
+                    
+                    # cache['padded_voxel_points'] = (padded_voxel_points)
+                    # cache['label_one_hot'] = label_one_hot
+                    # cache['reg_target'] = reg_target
+                    # cache['reg_loss_mask'] = reg_loss_mask
+                    # cache['anchors_map'] = anchors_map
+                    # cache['vis_maps'] = vis_maps
+                    # cache['gt_max_iou'] = [{"gt_box": [[0, 0, 0, 0], [0, 0, 0, 0]]}]
+                    # cache['filename'] = seq_file
+                    # cache['target_agent_id'] = 0
+                    # cache['num_sensor'] = 0
+                    # cache['trans_matrices'] = np.zeros((5, 4, 4))
+                    # cache['padded_voxel_points_global'] = 0
+                    # cache['reg_target_global'] = 0
+                    # cache['anchors_map_global'] = 0
+                    # cache['gt_max_iou_global'] = 0
+                    # cache['trans_matrices_map'] = 0
                 else:
-                    # return padded_voxel_points, padded_voxel_points, label_one_hot, reg_target, reg_loss_mask, anchors_map, vis_maps, 0, 0, np.zeros(
-                    #     (5, 4, 4))
-                    # data_return[agent]['padded_voxel_points'] = padded_voxel_points
-                    # data_return[agent]['padded_voxel_points_teacher'] = padded_voxel_points
-                    # data_return[agent]['label_one_hot'] = label_one_hot
-                    # data_return[agent]['reg_target'] = reg_target
-                    # data_return[agent]['reg_loss_mask'] = reg_loss_mask
-                    # data_return[agent]['anchors_map'] = anchors_map
-                    # data_return[agent]['vis_maps'] = vis_maps
-                    # data_return[agent]['gt_max_iou'] =  [{"gt_box": [[0, 0, 0, 0], [0, 0, 0, 0]]}]
-                    # data_return[agent]['filename'] = [seq_file]
-                    # data_return[agent]['target_agent_id'] = 0
-                    # data_return[agent]['num_sensor'] = 0
-                    data_return_peragent['trans_matrices'].append(np.zeros((5, 4, 4)))
-                    data_return_peragent['padded_voxel_points'].append(padded_voxel_points)
-                    data_return_peragent['filename'] = data_return_peragent['filename'] + seq_file + ','
-                    data_return_peragent['target_agent_id'].append(0)
-                    data_return_peragent['num_sensor'].append(0)
-                    # data_return[agent]['padded_voxel_points_teacher'].append(padded_voxel_points_teacher)
-                    # data_return[agent]['label_one_hot'].append(label_one_hot)
-                    # data_return[agent]['reg_target'].append(reg_target)
-                    # data_return[agent]['reg_loss_mask'].append(reg_loss_mask)
-                    # data_return[agent]['anchors_map'].append(anchors_map)
-                    # data_return[agent]['vis_maps'].append(vis_maps)
-                    # data_return[agent]['gt_max_iou'].append([{"gt_box": [[0, 0, 0, 0], [0, 0, 0, 0]]}])
-                    if write_flag == True:
-                        data_return_peragent['padded_voxel_points_teacher'] = padded_voxel_points
-                        data_return_peragent['label_one_hot'] = label_one_hot
-                        data_return_peragent['reg_target'] = reg_target
-                        data_return_peragent['reg_loss_mask'] = reg_loss_mask
-                        data_return_peragent['anchors_map'] = anchors_map
-                        data_return_peragent['vis_maps'] = vis_maps
-                        data_return_peragent['gt_max_iou'] = [{"gt_box": [[0, 0, 0, 0], [0, 0, 0, 0]]}]
-                        # data_return_peragent['trans_matrices'] = np.zeros((5, 4, 4)) 
-                        continue
-                    else:
-                        continue
+                    data_return['trans_matrices'] = np.zeros((5, 4, 4))
+                    data_return['padded_voxel_points'] = padded_voxel_points
+                    data_return['filename'] = seq_file
+                    data_return['target_agent_id'] = 0
+                    data_return['num_sensor'] = 0
+
+                    cache['trans_matrices'] = np.zeros((5, 4, 4))
+                    cache['padded_voxel_points'] = padded_voxel_points
+                    cache['filename'] = seq_file
+                    cache['target_agent_id'] = 0
+                    cache['num_sensor'] = 0
+
+                data_return['padded_voxel_points_teacher'] = padded_voxel_points
+                data_return['label_one_hot'] = label_one_hot
+                data_return['reg_target'] = reg_target
+                data_return['reg_loss_mask'] = reg_loss_mask
+                data_return['anchors_map'] = anchors_map
+                data_return['vis_maps'] = vis_maps
+                data_return['gt_max_iou'] = [{"gt_box": [[0, 0, 0, 0], [0, 0, 0, 0]]}]
+                    
+                    # cache['padded_voxel_points_teacher'] = padded_voxel_points
+                    # cache['label_one_hot'] = label_one_hot
+                    # cache['reg_target'] = reg_target
+                    # cache['reg_loss_mask'] = reg_loss_mask
+                    # cache['anchors_map'] = anchors_map
+                    # cache['vis_maps'] = vis_maps
+                    # cache['gt_max_iou'] = [{"gt_box": [[0, 0, 0, 0], [0, 0, 0, 0]]}]
+                    # data_return['trans_matrices'] = np.zeros((5, 4, 4)) 
             else:
                 gt_dict = gt_data_handle.item()
                 # if len(self.cache) < self.cache_size:
@@ -592,85 +541,204 @@ class CarscenesDataset(Dataset):
                     reg_target_global = reg_target_global.astype(np.float32)
                     anchors_map_global = self.anchors_map_global
                     anchors_map_global = anchors_map_global.astype(np.float32)
-                    # return padded_voxel_points, label_one_hot, reg_target, reg_loss_mask, anchors_map, vis_maps, [
-                    #     {"gt_box": gt_max_iou}], [seq_file], target_agent_id, num_sensor, trans_matrices, \
-                    #     padded_voxel_points_global, reg_target_global, anchors_map_global, [{"gt_box_global": gt_max_iou_global}], trans_matrices_map
-                    # data_return[agent]['padded_voxel_points'] = padded_voxel_points
-                    # data_return[agent]['label_one_hot'] = label_one_hot
-                    # data_return[agent]['reg_target'] = reg_target
-                    # data_return[agent]['reg_loss_mask'] = reg_loss_mask
-                    # data_return[agent]['anchors_map'] = anchors_map
-                    # data_return[agent]['vis_maps'] = vis_maps
-                    # data_return[agent]['gt_max_iou'] =  [ {"gt_box": gt_max_iou}]
-                    # data_return[agent]['filename'] = [seq_file]
-                    # data_return[agent]['target_agent_id'] = target_agent_id
-                    # data_return[agent]['num_sensor'] = num_sensor
-                    # data_return[agent]['trans_matrices'] = trans_matrices
-                    # data_return[agent]['padded_voxel_points_global'] = padded_voxel_points_global
-                    # data_return[agent]['reg_target_global'] = reg_target_global
-                    # data_return[agent]['anchors_map_global'] = anchors_map_global
-                    # data_return[agent]['gt_max_iou_global'] = [{"gt_box_global": gt_max_iou_global}]
-                    # data_return[agent]['trans_matrices_map'] = trans_matrices_map
-                    data_return_peragent['padded_voxel_points'].append(padded_voxel_points)
-                    data_return_peragent['label_one_hot'].append(label_one_hot)
-                    data_return_peragent['reg_target'].append(reg_target)
-                    data_return_peragent['reg_loss_mask'].append(reg_loss_mask)
-                    data_return_peragent['anchors_map'].append(anchors_map)
-                    data_return_peragent['vis_maps'].append(vis_maps)
-                    data_return_peragent['gt_max_iou'].append([ {"gt_box": gt_max_iou}])
-                    data_return_peragent['filename'] = data_return_peragent['filename'] + seq_file + ','
-                    data_return_peragent['target_agent_id'].append(target_agent_id)
-                    data_return_peragent['num_sensor'].append(num_sensor)
-                    data_return_peragent['trans_matrices'].append(trans_matrices)
-                    data_return_peragent['padded_voxel_points_global'].append(padded_voxel_points_global)
-                    data_return_peragent['reg_target_global'].append(reg_target_global)
-                    data_return_peragent['anchors_map_global'].append(anchors_map_global)
-                    data_return_peragent['gt_max_iou_global'].append([{"gt_box_global": gt_max_iou_global}])
-                    data_return_peragent['trans_matrices_map'].append(trans_matrices_map)
-                    continue
+                    data_return['padded_voxel_points'] = padded_voxel_points
+                    data_return['label_one_hot'] = label_one_hot
+                    data_return['reg_target'] = reg_target
+                    data_return['reg_loss_mask'] = reg_loss_mask
+                    data_return['anchors_map'] = anchors_map
+                    data_return['vis_maps'] = vis_maps
+                    data_return['gt_max_iou'] = [ {"gt_box": gt_max_iou}]
+                    data_return['filename'] =  seq_file
+                    data_return['target_agent_id'] = target_agent_id
+                    data_return['num_sensor'] = num_sensor
+                    data_return['trans_matrices'] = trans_matrices
+                    data_return['padded_voxel_points_global'] = padded_voxel_points_global
+                    data_return['reg_target_global'] = reg_target_global
+                    data_return['anchors_map_global'] = anchors_map_global
+                    data_return['gt_max_iou_global'] = [{"gt_box_global": gt_max_iou_global}]
+                    data_return['trans_matrices_map'] = trans_matrices_map
+
+                    # cache['padded_voxel_points'] = padded_voxel_points
+                    # cache['label_one_hot'] = label_one_hot
+                    # cache['reg_target'] = reg_target
+                    # cache['reg_loss_mask'] = reg_loss_mask
+                    # cache['anchors_map'] = anchors_map
+                    # cache['vis_maps'] = vis_maps
+                    # cache['gt_max_iou'] = [ {"gt_box": gt_max_iou}]
+                    # cache['filename'] =  seq_file
+                    # cache['target_agent_id'] = target_agent_id
+                    # cache['num_sensor'] = num_sensor
+                    # cache['trans_matrices'] = trans_matrices
+                    # cache['padded_voxel_points_global'] = padded_voxel_points_global
+                    # cache['reg_target_global'] = reg_target_global
+                    # cache['anchors_map_global'] = anchors_map_global
+                    # cache['gt_max_iou_global'] = [{"gt_box_global": gt_max_iou_global}]
+                    # cache['trans_matrices_map'] = trans_matrices_map
                 else:
                     # return padded_voxel_points, padded_voxel_points_teacher, label_one_hot, reg_target, reg_loss_mask, anchors_map, vis_maps, \
                     #     target_agent_id, num_sensor, trans_matrices
-                    data_return_peragent['padded_voxel_points'].append(padded_voxel_points)
-                    data_return_peragent['filename'] = data_return_peragent['filename'] + seq_file + ','
-                    data_return_peragent['target_agent_id'].append(target_agent_id)
-                    data_return_peragent['num_sensor'].append(num_sensor)
-                    data_return_peragent['trans_matrices'].append(trans_matrices)
-                    if write_flag == True:
-                        data_return_peragent['padded_voxel_points_teacher'] = padded_voxel_points_teacher
-                        data_return_peragent['label_one_hot'] = label_one_hot
-                        data_return_peragent['reg_target'] = reg_target
-                        data_return_peragent['reg_loss_mask'] = reg_loss_mask
-                        data_return_peragent['anchors_map'] = anchors_map
-                        data_return_peragent['vis_maps'] = vis_maps
-                        data_return_peragent['gt_max_iou'] = [{"gt_box": [[0, 0, 0, 0], [0, 0, 0, 0]]}]
-                        # data_return_peragent['trans_matrices'] = trans_matrices
-                    else:
-                        continue
-        time_3 = time.time()
-        # print(agent, '号计时点3:', time_3 - time_1, "非零数量：", data_return_peragent['num_sensor'])
-        data_return_peragent['padded_voxel_points'] = torch.stack(tuple(torch.Tensor(data_return_peragent['padded_voxel_points'])),0)
-        data_return_peragent['filename'] = data_return_peragent['filename'].strip(',')
-        data_return_peragent['target_agent_id'] = torch.Tensor(data_return_peragent['target_agent_id'])
-        data_return_peragent['agent'] = agent           
-        data_return_peragent['trans_matrices'] = torch.stack(tuple(torch.Tensor(data_return_peragent['trans_matrices'])),0)
-        time_4 = time.time()
-        # print(agent, '号计时点4:', time_4 - time_1)
-        # self.cache[agent][idx] = data_return_peragent
-        return data_return_peragent
+                    data_return['padded_voxel_points'] = padded_voxel_points
+                    data_return['filename'] =  seq_file 
+                    data_return['target_agent_id'] = target_agent_id
+                    data_return['num_sensor'] = num_sensor
+                    data_return['trans_matrices'] = trans_matrices
+
+                    # cache['padded_voxel_points'] = padded_voxel_points
+                    # cache['filename'] =  seq_file 
+                    # cache['target_agent_id'] = target_agent_id
+                    # cache['num_sensor'] = num_sensor
+                    # cache['trans_matrices'] = trans_matrices
+                    
+                # if write_flag == True:
+                data_return['padded_voxel_points_teacher'] = padded_voxel_points_teacher
+                data_return['label_one_hot'] = label_one_hot
+                data_return['reg_target'] = reg_target
+                data_return['reg_loss_mask'] = reg_loss_mask
+                data_return['anchors_map'] = anchors_map
+                data_return['vis_maps'] = vis_maps
+                data_return['gt_max_iou'] = [{"gt_box": [[0, 0, 0, 0], [0, 0, 0, 0]]}]
+
+                    # cache['padded_voxel_points_teacher'] = padded_voxel_points_teacher
+                    # cache['label_one_hot'] = label_one_hot
+                    # cache['reg_target'] = reg_target
+                    # cache['reg_loss_mask'] = reg_loss_mask
+                    # cache['anchors_map'] = anchors_map
+                    # cache['vis_maps'] = vis_maps
+                    # cache['gt_max_iou'] = [{"gt_box": [[0, 0, 0, 0], [0, 0, 0, 0]]}]
+                # data_return['trans_matrices'] = trans_matrices
+        else:
+            data_return = self.cache[seq_file]
+            # if self.val:
+            #     data_return['padded_voxel_points'] = cache['padded_voxel_points']
+            #     data_return['label_one_hot'] = cache['label_one_hot']
+            #     data_return['reg_target'] = cache['reg_target']
+            #     data_return['reg_loss_mask'] = cache['reg_loss_mask']
+            #     data_return['anchors_map'] = cache['anchors_map']
+            #     data_return['vis_maps'] = cache['vis_maps']
+            #     data_return['gt_max_iou'] = cache['gt_max_iou']
+            #     data_return['filename'] =  seq_file
+            #     data_return['target_agent_id'] = cache['target_agent_id']
+            #     data_return['num_sensor'] = cache['num_sensor']
+            #     data_return['trans_matrices'] = cache['trans_matrices']
+            #     data_return['padded_voxel_points_global'] = cache['padded_voxel_points_global']
+            #     data_return['reg_target_global'] = cache['reg_target_global']
+            #     data_return['anchors_map_global'] = cache['anchors_map_global']
+            #     data_return['gt_max_iou_global'] = cache['gt_max_iou_global']
+            #     data_return['trans_matrices_map'] = cache['trans_matrices_map']
+            # else:
+            #     # return padded_voxel_points, padded_voxel_points_teacher, label_one_hot, reg_target, reg_loss_mask, anchors_map, vis_maps, \
+            #     #     target_agent_id, num_sensor, trans_matrices
+            #     data_return['padded_voxel_points'] = cache['padded_voxel_points']
+            #     data_return['filename'] =  seq_file 
+            #     data_return['target_agent_id'] = cache['target_agent_id']
+            #     data_return['num_sensor'] = cache['num_sensor']
+            #     data_return['trans_matrices'] = cache['trans_matrices']
+            #     if index == 0:
+            #         data_return['padded_voxel_points_teacher'] = cache['padded_voxel_points_teacher']
+            #         data_return['label_one_hot'] = cache['label_one_hot']
+            #         data_return['reg_target'] = cache['reg_target']
+            #         data_return['reg_loss_mask'] = cache['reg_loss_mask']
+            #         data_return['anchors_map'] = cache['anchors_map']
+            #         data_return['vis_maps'] = cache['vis_maps']
+            #         data_return['gt_max_iou'] = cache['gt_max_iou']
+            #     # data_return['trans_matrices'] = trans_matrices
+        return data_return
+
+    # def per_agent_load(self, agent):
+        # [idx, agent, time_1] = para
+        # print(load_list)
+        # if self.val:
+        #     data_return['padded_voxel_points'] = [None for _ in range(self.forcast_num)]
+        #     data_return['label_one_hot'] = [None for _ in range(self.forcast_num)]
+        #     data_return['reg_target'] = [None for _ in range(self.forcast_num)]
+        #     data_return['reg_loss_mask'] = [None for _ in range(self.forcast_num)]
+        #     data_return['anchors_map'] = [None for _ in range(self.forcast_num)]
+        #     data_return['vis_maps'] = [None for _ in range(self.forcast_num)]
+        #     data_return['gt_max_iou'] =  [None for _ in range(self.forcast_num)]
+        #     data_return['filename'] = [None for _ in range(self.forcast_num)]
+        #     data_return['target_agent_id'] = [None for _ in range(self.forcast_num)]
+        #     data_return['num_sensor'] = [None for _ in range(self.forcast_num)]
+        #     data_return['trans_matrices'] = [None for _ in range(self.forcast_num)]
+        #     data_return['padded_voxel_points_global'] = [None for _ in range(self.forcast_num)]
+        #     data_return['reg_target_global'] = [None for _ in range(self.forcast_num)]
+        #     data_return['anchors_map_global'] = [None for _ in range(self.forcast_num)]
+        #     data_return['gt_max_iou_global'] = [None for _ in range(self.forcast_num)]
+        #     data_return['trans_matrices_map'] = [None for _ in range(self.forcast_num)]
+        # else:
+        #     data_return['padded_voxel_points'] = [None for _ in range(self.forcast_num)]
+        #     # data_return['padded_voxel_points_teacher'] = []
+        #     # data_return['label_one_hot'] = []
+        #     # data_return['reg_target'] = []
+        #     # data_return['reg_loss_mask'] = []
+        #     # data_return['anchors_map'] = []
+        #     # data_return['vis_maps'] = []
+        #     # data_return['gt_max_iou'] =  []
+        #     data_return['trans_matrices'] = [None for _ in range(self.forcast_num)]
+        #     data_return['filename'] = [None for _ in range(self.forcast_num)]
+        #     data_return['target_agent_id'] = [None for _ in range(self.forcast_num)]
+        #     data_return['num_sensor'] = [None for _ in range(self.forcast_num)]
+
+        # para_list = []
+        # write_flag_list = [True, False, False, False]
+        # agent_list = [agent, agent, agent, agent]
+        # for para in zip(load_list, write_flag_list, range(self.forcast_num), agent_list):
+        #     para_list.append(para)
+        # # for seq_file in load_list:
+        # with futures.ProcessPoolExecutor(None) as executor:
+        #     res = executor.map(self.per_scene_load, sorted(para_list), chunksize=1)
+        # time_3 = time.time()
+        # # print(agent, '号计时点3:', time_3 - time_1, "非零数量：", data_return['num_sensor'])
+        # data_return['padded_voxel_points'] = torch.stack(tuple(torch.Tensor(data_return['padded_voxel_points'])),0)
+        # # data_return['filename'] = data_return['filename'].strip(',')
+        # data_return['target_agent_id'] = torch.Tensor(data_return['target_agent_id'])
+        # data_return['agent'] = agent           
+        # data_return['trans_matrices'] = torch.stack(tuple(torch.Tensor(data_return['trans_matrices'])),0)
+        # time_4 = time.time()
+        # filename_str = ''
+        # for file in data_return['filename']:
+        #     filename_str += file
+        #     filename_str += ','
+        # data_return['filename'] = filename_str.strip(',')
+        # # print(agent, '号计时点4:', time_4 - time_1)
+        # # self.cache[agent][idx] = data_return
+        # return data_return
+
+    # def late_processing(self, agent):
+    #     data_return['padded_voxel_points'] = torch.stack(tuple(torch.Tensor(data_return['padded_voxel_points'])),0)
+    #     # data_return['filename'] = data_return['filename'].strip(',')
+    #     data_return['target_agent_id'] = torch.Tensor(data_return['target_agent_id'])
+    #     data_return['agent'] = agent           
+    #     data_return['trans_matrices'] = torch.stack(tuple(torch.Tensor(data_return['trans_matrices'])),0)
+    #     time_4 = time.time()
+    #     filename_str = ''
+    #     for file in data_return['filename']:
+    #         filename_str += file
+    #         filename_str += ','
+    #     data_return['filename'] = filename_str.strip(',')
 
     def __getitem__(self, idx):
+        time_start = time.time()
         # if idx in self.cache:
         #     gt_dict = self.cache[idx]
         # else:
-        print("返回所花时间:",time.time() - self.time_temp)
-        time_1 = time.time()
-
+        if idx == 0:        
+            self.seq_dict = {}
+            # for agent_num in range(self.num_agent):
+            for agent_num in range(1):
+                self.dataset_root_peragent = self.dataset_root + '/agent0'
+                self.seq_dict[agent_num] = self.get_data_dict(self.dataset_root_peragent)
+        time_2 = time.time()
+        # try:
+        #     print('迭代时间:',time_2 - self.time_4)
+        # except:
+        #     print('wait')
+        data_return = {}
         load_list = []
         for agent in range(len(self.latency_lambda)):
+            # data_return = Manager().dict()
             # seq_file_new = self.seq_dict[self.center_agent][agent][idx]
             seq_file_new = self.seq_dict[0][agent][idx]
-            scene_id, inscene_id = seq_file_new.split('/')[-1].split('_')
+            scene_id, inscene_id = seq_file_new.split('/')[-1].split('_')   
             inscene_id = int(inscene_id)
             seq_scene_root = seq_file_new.strip(seq_file_new.split('/')[-1])
             for iter in range(self.forcast_num):
@@ -678,58 +746,137 @@ class CarscenesDataset(Dataset):
                 if new_inscene_id <= 0:
                     new_inscene_id = 0
                 load_list.append([agent, iter, os.path.join(seq_scene_root, scene_id + '_' + str(new_inscene_id))])
-            # print(load_list)
-        
-        
-        
-        if idx not in self.cache.keys():
-            # time_1 = time.time()
-            # self.center_agent = int(idx / self.num_sample_seqs * self.num_agent)
-            self.center_agent = 0
-            # idx = idx % int(self.num_sample_seqs / self.num_agent)
-            seq_file_list = []
-            data_return = {}
-            # data_return['padded_voxel_points'] = []
-            # data_return['label_one_hot'] = []
-            # data_return['reg_target'] = []
-            # data_return['reg_loss_mask'] = []
-            # data_return['anchors_map'] = []
-            # data_return['vis_maps'] = []
-            # data_return['gt_max_iou'] = []
-            # data_return['filename'] = []
-            # data_return['target_agent_id'] = []
-            # data_return['num_sensor'] = []
-            # data_return['trans_matrices'] = []
-            data_return['center_agent'] = self.center_agent
-            para_list = []
-            time_1 = time.time()
-            for agent in range(len(self.latency_lambda)):
-                temp_tuple = [idx, agent, time_1]
-                para_list.append(temp_tuple)
+            # self.per_agent_load(agent)
 
-            workers = 5
-            with futures.ProcessPoolExecutor(workers) as executor:
-                res = executor.map(self.per_agent_load, sorted(para_list), chunksize=1)
-                res = list(res)
-        #     with futures.ProcessPoolExecutor(workers) as executor:
+        # if idx not in self.cache.keys():
+        time_1 = time.time()
+        # self.center_agent = int(idx / self.num_sample_seqs * self.num_agent)
+        self.center_agent = 0
+        # idx = idx % int(self.num_sample_seqs / self.num_agent)
+        # seq_file_list = []
+        # data_return = {}
+        data_return['center_agent'] = self.center_agent
+        # para_list = []
+        time_1 = time.time()
+        # for agent in range(len(self.latency_lambda)):
+        #     temp_tuple = [idx, agent, time_1]
+        #     para_list.append(temp_tuple)
+        time_pas = time.time()
+        workers = len(self.latency_lambda * self.forcast_num)
+        # res = [None for _ in range(workers)]
+        with futures.ThreadPoolExecutor(None) as executor:
+            # for i in range(workers):
+            #     res[i] = executor.submit(self.per_scene_load, load_list[i])
+            res = executor.map(self.per_scene_load, sorted(load_list), chunksize=workers)
+            res = list(res)
+        # res = []
+        # for para_item in load_list:
+        #     res.append(self.per_scene_load(para_item))
+        # print('并行处理时间:',time.time() - time_pas)
+        for agent in range(len(self.latency_lambda)):
+            data_return[agent] = {}
+            if self.val:
+                data_return[agent]['padded_voxel_points'] = []
+                data_return[agent]['label_one_hot'] = []
+                data_return[agent]['reg_target'] = []
+                data_return[agent]['reg_loss_mask'] = []
+                data_return[agent]['anchors_map'] = []
+                data_return[agent]['vis_maps'] = []
+                data_return[agent]['gt_max_iou'] = []
+                data_return[agent]['filename'] =  []
+                data_return[agent]['target_agent_id'] = []
+                data_return[agent]['num_sensor'] = []
+                data_return[agent]['trans_matrices'] = []
+                data_return[agent]['padded_voxel_points_global'] = []
+                data_return[agent]['reg_target_global'] = []
+                data_return[agent]['anchors_map_global'] = []
+                data_return[agent]['gt_max_iou_global'] = []
+                data_return[agent]['trans_matrices_map'] = []
+            else:
+                # return padded_voxel_points, padded_voxel_points_teacher, label_one_hot, reg_target, reg_loss_mask, anchors_map, vis_maps, \
+                #     target_agent_id, num_sensor, trans_matrices
+                data_return[agent]['padded_voxel_points'] = []
+                data_return[agent]['filename'] =  []
+                data_return[agent]['target_agent_id'] = []
+                data_return[agent]['num_sensor'] = []
+                data_return[agent]['trans_matrices'] = []
+
+            for iter in range(self.forcast_num):
+                temp =  res[agent * self.forcast_num + iter]
+                # if load_list[agent * self.forcast_num + iter][0] not in self.cache.keys():
+                #     self.cache[load_list[agent * self.forcast_num + iter][2]] = temp
+                if self.val:
+                    data_return[agent]['padded_voxel_points'].append(temp[agent]['padded_voxel_points'])
+                    data_return[agent]['label_one_hot'].append(temp[agent]['label_one_hot'])
+                    data_return[agent]['reg_target'].append(temp[agent]['reg_target'])
+                    data_return[agent]['reg_loss_mask'].append(temp[agent]['reg_loss_mask'])
+                    data_return[agent]['anchors_map'].append(temp[agent]['anchors_map'])
+                    data_return[agent]['vis_maps'].append(temp[agent]['vis_maps'])
+                    data_return[agent]['gt_max_iou'].append(temp[agent]['gt_max_iou'])
+                    data_return[agent]['filename'].append(temp[agent]['filename'])
+                    data_return[agent]['target_agent_id'].append(temp[agent]['target_agent_id'])
+                    data_return[agent]['num_sensor'].append(temp[agent]['num_sensor'])
+                    data_return[agent]['trans_matrices'].append(temp[agent]['trans_matrices'])
+                    data_return[agent]['padded_voxel_points_global'].append(temp[agent]['padded_voxel_points_global'])
+                    data_return[agent]['reg_target_global'].append(temp[agent]['reg_target_global'])
+                    data_return[agent]['anchors_map_global'].append(temp[agent]['anchors_map_global'])
+                    data_return[agent]['gt_max_iou_global'].append(temp[agent]['gt_max_iou_global'])
+                    data_return[agent]['trans_matrices_map'].append(temp[agent]['trans_matrices_map'])
+                else:
+                    # return padded_voxel_points, padded_voxel_points_teacher, label_one_hot, reg_target, reg_loss_mask, anchors_map, vis_maps, \
+                    #     target_agent_id, num_sensor, trans_matrices
+                    data_return[agent]['padded_voxel_points'].append(temp['padded_voxel_points'])
+                    data_return[agent]['filename'].append(temp['filename'])
+                    data_return[agent]['target_agent_id'] .append(temp['target_agent_id'])
+                    data_return[agent]['num_sensor'].append(temp['num_sensor'])
+                    data_return[agent]['trans_matrices'].append(temp['trans_matrices'])
+                    if iter  == 0:
+                        data_return[agent]['padded_voxel_points_teacher'] = temp['padded_voxel_points_teacher']
+                        data_return[agent]['label_one_hot'] = temp['label_one_hot']
+                        data_return[agent]['reg_target'] = temp['reg_target']
+                        data_return[agent]['reg_loss_mask'] = temp['reg_loss_mask']
+                        data_return[agent]['anchors_map'] = temp['anchors_map']
+                        data_return[agent]['vis_maps'] = temp['vis_maps']
+                        data_return[agent]['gt_max_iou'] = temp['gt_max_iou']
+        time_3 = time.time()
+        # print('前读取过程:',time_3-time_2)
+        for agent in range(len(self.latency_lambda)):
+            # data_return[agent]['padded_voxel_points'] = torch.stack(tuple(data_return[agent]['padded_voxel_points']),0)
+            data_return[agent]['padded_voxel_points'] = np.stack(data_return[agent]['padded_voxel_points'],0)
+            # time_bs = time.time()
+            # data_return['filename'] = data_return['filename'].strip(',')
+            data_return[agent]['target_agent_id'] = torch.tensor(data_return[agent]['target_agent_id'])
+            # time_as = time.time()
+            # print('stack时间:',time_as-time_bs)
+            data_return[agent]['agent'] = agent           
+            data_return[agent]['trans_matrices'] = np.stack(data_return[agent]['trans_matrices'],0)
+            filename_str = ''
+            for file in data_return[agent]['filename']:
+                filename_str += file
+                filename_str += ','
+            data_return[agent]['filename'] = filename_str.strip(',')
+        # print('后处理时间:',time.time()-time_3)
+
+        # agent_list = [0,1,2,3,4]
+        # with futures.ProcessPoolExecutor(None) as executor:
+        #     res = executor.map(self.late_processing, sorted(agent_list), chunksize=1)
+        # with futures.ProcessPoolExecutor(workers) as executor:
         # # 添加任务, 假设我们要添加6个任务，由于进程池大小为2，每次能只有2个任务并行执行，其他任务排队
-        #         for i in range(len(para_list)):
-        #             future = executor.submit(self.per_agent_load, sorted(para_list)[i])
-        #             res .append(future.result())
-            for i in range(len(res)):
-                data_return[i] = res[i]
-            self.cache[idx] = data_return
-            time_3 = time.time()
-            print('读取一个item所花费的时间:', time_3 - time_1)
-            self.time_temp = time.time()   
-            return data_return
-        
-        else:
-            time_3 = time.time()
-            data_return = self.cache[idx]
-            print('读取一个item所花费的时间:', time_3 - time_1)
-            self.time_temp = time.time()
-            return data_return
+        #       for i in range(len(para_list)):
+        #           future = executor.submit(self.per_agent_load, sorted(para_list)[i])
+        #           res .append(future.result())
+
+        # for i in range(len(res)):
+        #     data_return[i] = res[i]
+        # self.cache[idx] = data_return   
+        self.time_4 = time.time()
+        # print('后处理部分:',self.time_4-time_3)
+
+        # print("一个item读取运行时间:",time.time() - time_start )
+        return data_return
+        # else:
+        #     data_return = self.cache[idx]
+        #     return data_return
 
 if __name__ == "__main__":
     split = 'train'
@@ -743,7 +890,7 @@ if __name__ == "__main__":
             reg_target, reg_loss_mask, anchors_map, motion_one_hot, motion_mask, vis_maps, dataset_root='./dataset/val/agent2',split = split,config=config,config_global=config_global,val=True)
 
     for idx in range(len(data_carscenes)):
-        padded_voxel_points, label_one_hot, reg_target, reg_loss_mask,anchors_map,\
+        padded_voxel_points, label_one_hot, reg_target, reg_loss_mask,anchors_map,
         motion_one_hot,motion_mask,vis_maps,gt_max_iou,_,_,_,_,_ = data_carscenes[idx]
         anchor_corners_list = get_anchor_corners_list(anchors_map,data_carscenes.box_code_size)
         anchor_corners_map = anchor_corners_list.reshape(data_carscenes.map_dims[0],data_carscenes.map_dims[1],len(data_carscenes.anchor_size),4,2)
