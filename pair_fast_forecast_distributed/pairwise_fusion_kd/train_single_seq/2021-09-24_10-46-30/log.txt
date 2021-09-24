@@ -1,0 +1,13 @@
+command line: train_faf_com_kd_distributed.py --data /DATA_SSD/slren/dataset_warp_kd/train --logpath /GPFS/data/zxlei/CollaborativePerception/Forcast/LatencyVersion/pair_fast_forecast_distributed/pairwise_fusion_kd --mode train --lr 0.001 --batch 12 --nepoch 150 --binary 1 --world_size 3 --log
+Namespace(batch=12, binary=True, data='/DATA_SSD/slren/dataset_warp_kd/train', forecast_num=4, gpu=2, kd=100000, layer=3, log=True, logname=None, logpath='/GPFS/data/zxlei/CollaborativePerception/Forcast/LatencyVersion/pair_fast_forecast_distributed/pairwise_fusion_kd', lr=0.001, mode='train', model_only=False, nepoch=150, ngpus_per_node=2, nworker=0, only_det=True, rank=0, resume='', resume_teacher='/DATA_SSD/slren/teacher_aug_batch_4_epoch_100.pth', visualization=True, world_size=3)
+
+epoch: 1, lr: 0.001	Total loss 25769.835938 (44240.239512)	classification Loss 572.574158 (1124.716226)	Localization Loss 25197.261719 (43115.523268)	Take 2415.4316289424896 s
+epoch: 2, lr: 0.001	Total loss 20633.679688 (34239.069779)	classification Loss 533.775757 (545.980431)	Localization Loss 20099.904297 (33693.089313)	Take 2351.7490952014923 s
+epoch: 3, lr: 0.001	Total loss 19644.039062 (31653.700052)	classification Loss 522.161621 (533.537402)	Localization Loss 19121.876953 (31120.162694)	Take 2356.4363141059875 s
+epoch: 4, lr: 0.001	Total loss 18324.273438 (29590.274460)	classification Loss 519.675598 (524.608417)	Localization Loss 17804.597656 (29065.666099)	Take 2315.0468537807465 s
+epoch: 5, lr: 0.001	Total loss 17016.527344 (27333.681582)	classification Loss 508.402161 (513.084876)	Localization Loss 16508.125000 (26820.596771)	Take 2333.3394858837128 s
+epoch: 6, lr: 0.001	Total loss 17007.060547 (25496.277725)	classification Loss 497.071869 (499.393557)	Localization Loss 16509.988281 (24996.884165)	Take 2267.9758172035217 s
+epoch: 7, lr: 0.001	Total loss 15657.414062 (23501.784233)	classification Loss 476.359192 (482.125221)	Localization Loss 15181.054688 (23019.659019)	Take 2298.8058087825775 s
+epoch: 8, lr: 0.001	Total loss 13968.201172 (21588.881534)	classification Loss 453.693359 (461.787390)	Localization Loss 13514.507812 (21127.094128)	Take 2345.2621471881866 s
+epoch: 9, lr: 0.001	Total loss 13237.446289 (20213.084714)	classification Loss 435.391418 (443.138036)	Localization Loss 12802.054688 (19769.946674)	Take 2334.6985476017 s
+epoch: 10, lr: 0.001	

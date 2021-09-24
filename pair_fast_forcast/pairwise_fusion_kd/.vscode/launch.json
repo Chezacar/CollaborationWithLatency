@@ -12,7 +12,7 @@
             "console": "integratedTerminal",
             "args": [
                 "--mode",
-                "train",
+                "val",
                 "--data",
                 "/GPFS/data/slren/dataset_warp_kd/train/",
                 "--logpath",
@@ -25,14 +25,14 @@
                 "3",
                 "--logname",
                 "pairwise_layer3_wf_latency10_100epoch",
-                // "--resume",
-                // "/GPFS/data/zxlei/CollaborativePerception/Forcast/LatencyVersion/pairwise_fast/pairwise_fusion_kd/log/train_single_seq/2021-08-05_19-47-55/epoch_100.pth",
+                "--resume",
+                "/GPFS/data/zxlei/CollaborativePerception/Forcast/LatencyVersion/pairwise_fast/pairwise_fusion_kd/log/train_single_seq/2021-09-16_14-51-39/epoch_78.pth",
                 // "--binary",
                 // "1"//,
                 // "--resume_teacher",
                 // "/DATA_SSD/slren/teacher_aug_batch_4_epoch_100.pth"
             ],
-            "env": {"CUDA_VISIBLE_DEVICES": "2"}
+            "env": {"CUDA_VISIBLE_DEVICES": "0"}
         }
     ]
 }

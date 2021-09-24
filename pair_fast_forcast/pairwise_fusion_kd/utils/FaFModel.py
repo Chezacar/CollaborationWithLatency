@@ -583,6 +583,61 @@ class FaFMIMONet_256_32_32(nn.Module):
         feat_mat = torch.cat(tuple(feat_list), 0)
         return feat_mat
 
+    def cootrans(self, feat_maps, trans_matrices, num_agent_tensor, batch_size, center_agent, size, device):
+        # feat_map = {}
+        # feat_list = []
+
+        # for i in range(self.agent_num):
+        #     feat_map[i] = torch.unsqueeze(feat_maps[batch_size * i:batch_size * (i + 1)], 1)
+        #     feat_list.append(feat_map[i])
+
+        # local_com_mat = torch.cat(tuple(feat_list), 1) # [2 5 512 16 16] [batch, agent, channel, height, width]
+        # local_com_mat_update = torch.cat(tuple(feat_list), 1) # to avoid the inplace operation
+
+        # local_com_mat = torch.cat(tuple(feat_list), 1) # [2 5 512 16 16] [batch, agent, channel, height, width]
+        for b in range(batch_size):
+            try: 
+                center_agent_int = int(center_agent[b])
+            except:
+                center_agent_int = center_agent
+            num_agent = int(num_agent_tensor[b, center_agent_int])
+            if num_agent == 0:
+                break
+            i = int(center_agent_int)
+            # for i in range(num_agent):
+            tg_agent = []
+            tg_agent.append(feat_maps[b*self.agent_num + i])
+            all_warp = trans_matrices[b, i, -1] # transformation [2 5 5 4 4]
+            for j in range(num_agent):
+                if j != i:
+                    nb_agent = torch.unsqueeze(feat_maps[b*self.agent_num + i], 0) # [1 512 16 16]
+                    nb_warp = all_warp[j] # [4 4]
+                    # normalize the translation vector
+                    x_trans = (4*nb_warp[0, 3])/128
+                    y_trans = -(4*nb_warp[1, 3])/128
+                    theta_rot = torch.tensor([[nb_warp[0,0], nb_warp[0,1], 0.0], [nb_warp[1,0], nb_warp[1,1], 0.0]]).type(dtype=torch.float).to(device)
+                    theta_rot = torch.unsqueeze(theta_rot, 0)
+                    grid_rot = F.affine_grid(theta_rot, size=torch.Size(size))  # 得到grid 用于grid sample
+                    theta_trans = torch.tensor([[1.0, 0.0, x_trans], [0.0, 1.0, y_trans]]).type(dtype=torch.float).to(device)
+                    theta_trans = torch.unsqueeze(theta_trans, 0)
+                    grid_trans = F.affine_grid(theta_trans, size=torch.Size(size))  # 得到grid 用于grid sample
+                    #first rotate the feature map, then translate it
+                    warp_feat_rot = F.grid_sample(nb_agent, grid_rot, mode='bilinear')
+                    warp_feat_trans = F.grid_sample(warp_feat_rot, grid_trans, mode='bilinear')
+                    warp_feat = torch.squeeze(warp_feat_trans)
+                    tg_agent.append(warp_feat.type(dtype=torch.float32))
+
+                # for k in range(5-num_agent):
+                #     tg_agent.append(padding_feat)
+
+            tg_agent=torch.stack(tg_agent)
+            # tg_agent = self.adafusion(tg_agent)
+
+        #     local_com_mat_update[b, i] = tg_agent
+        # return local_com_mat_update
+
+
+
     def forward(self, bevs, trans_matrices, num_agent_tensor, vis=None, training=True, MO_flag=True, inference='activated', batch_size=2, center_agent = 0, delta_t = []):
 
         bevs = bevs.permute(0, 1, 2, 5, 3, 4) # (Batch, seq, z, h, w)
@@ -609,6 +664,7 @@ class FaFMIMONet_256_32_32(nn.Module):
         for batch in range(batch_size):
             for inbatch in range(len(delta_t[0])):
                 x_temp, x_1_temp, x_2_temp, x_3_temp, x_4_temp = self.u_encoder(bevs[batch * len(delta_t[0]) + inbatch])
+                # x_3_temp = 
                 if delta_t[batch][inbatch] > 0:
                     x_feature_list.append(self.forcast(x_3_temp, delta_t[batch][inbatch]))
                 else:
@@ -664,7 +720,8 @@ class FaFMIMONet_256_32_32(nn.Module):
                     warp_feat_trans = F.grid_sample(warp_feat_rot, grid_trans, mode='bilinear')
                     warp_feat = torch.squeeze(warp_feat_trans)
                     tg_agent.append(warp_feat.type(dtype=torch.float32))
-
+                else:
+                    tg_agent.append(warp_feat.type(dtype=torch.float32))
                 # for k in range(5-num_agent):
                 #     tg_agent.append(padding_feat)
 

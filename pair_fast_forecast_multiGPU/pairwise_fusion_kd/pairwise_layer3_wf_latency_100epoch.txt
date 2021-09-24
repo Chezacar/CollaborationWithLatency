@@ -1,0 +1,21 @@
+
+overall local results@iou0.5
+0.4469236731529236
+overall local results@iou0.7
+0.3861733078956604
+local1 results@iou0.5
+0.44436416029930115
+local1 results@iou0.7
+0.40601104497909546
+local2 results@iou0.5
+0.5169340372085571
+local2 results@iou0.7
+0.47113296389579773
+local3 results@iou0.5
+0.4355141520500183
+local3 results@iou0.7
+0.39387744665145874
+local4 results@iou0.5
+0.44614750146865845
+local4 results@iou0.7
+0.38711467385292053

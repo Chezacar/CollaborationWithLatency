@@ -327,7 +327,7 @@ class CarscenesDataset(Dataset):
         for file_name in os.listdir(file_path):
             path_item = os.path.join(file_path, file_name).strip('/').split('/')
             scene_stamp, time_stamp = path_item[-1].split('_')
-            if int(time_stamp) >= 99:
+            if int(time_stamp) >= 9:
                 agent_id = int(path_item[-2][-1])
                 del path_item[-2:]
                 path_pre = '/'
@@ -663,7 +663,7 @@ class CarscenesDataset(Dataset):
         # if idx in self.cache:
         #     gt_dict = self.cache[idx]
         # else:
-        print("返回所花时间:",time.time() - self.time_temp)
+        # print("返回所花时间:",time.time() - self.time_temp)
         time_1 = time.time()
 
         load_list = []

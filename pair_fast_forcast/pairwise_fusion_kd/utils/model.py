@@ -14,12 +14,16 @@ class forcast_lstm(nn.Module):
         self.lstm_layer = nn.LSTMCell(input_size=self.embedding_dim,hidden_size=self.hidden_size)
         # self.conv3d_1 = nn.Conv3D(64, 64, kernel_size=(3, 3, 3), stride=1, padding=(0, 0, 0))
         # self.conv3d_2 = nn.Conv3D(128, 128, kernel_size=(3, 3, 3), stride=1, padding=(0, 0, 0))
-        self.linear_1 = nn.Linear(256, 64)
-        self.linear_2 = nn.Linear(64,16)
-        self.linear_3 = nn.Linear(16, 64)
-        self.linear_4 = nn.Linear(64,256)
-        self.linear_5 = nn.Linear(4,16)
-        self.linear_6 = nn.Linear(16,4)
+        # self.linear_1 = nn.Linear(256, 64)
+        # self.linear_2 = nn.Linear(64,16)
+        # self.linear_3 = nn.Linear(16, 64)
+        # self.linear_4 = nn.Linear(64,256)
+        # self.linear_5 = nn.Linear(4,16)
+        # self.linear_6 = nn.Linear(16,4)
+        self.linear_1 = nn.Linear(256, 32)
+        self.linear_2 = nn.Linear(32,4)
+        self.linear_3 = nn.Linear(4, 32)
+        self.linear_4 = nn.Linear(32,256)
         
     def forward(self, x, delta_t):
         x = x.permute(0, 2, 3, 1)
@@ -27,8 +31,8 @@ class forcast_lstm(nn.Module):
         x = F.relu(x)
         x = self.linear_2(x)
         x = F.relu(x)
-        x = self.linear_6(x)
-        x = F.relu(x)
+        # x = self.linear_6(x)
+        # x = F.relu(x)
         shape_a, shape_b, shape_c, shape_d = x.shape
         x = x.reshape(shape_a, 1, shape_b * shape_c * shape_d)
         for i in range(shape_a):
