@@ -22,11 +22,11 @@
                 "--nepoch",
                 "100",
                 "--layer",
-                "3"
+                "3",
                 // "--logname",
                 // "pairwise_layer3_wf_distributed_latency10_33epoch",
-                // "--resume",
-                // "/GPFS/data/zxlei/CollaborativePerception/Forcast/LatencyVersion/pair_fast_forecast_distributed/pairwise_fusion_kd/train_single_seq/2021-09-22_22-59-03/epoch_34.pth",
+                "--resume",
+                "/GPFS/data/zxlei/CollaborativePerception/Forcast/LatencyVersion/pair_fast_forecast_distributed/pairwise_fusion_kd/train_single_seq/2021-09-24_10-46-30/epoch_77.pth"
                 // "--binary",
                 // "1"//,
                 // "--resume_teacher",

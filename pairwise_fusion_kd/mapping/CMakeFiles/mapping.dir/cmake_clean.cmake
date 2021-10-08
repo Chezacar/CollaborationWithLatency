@@ -1,6 +1,6 @@
 file(REMOVE_RECURSE
-  "/home/yimingli/object_det/data/mapping.cpython-37m-x86_64-linux-gnu.so"
-  "/home/yimingli/object_det/data/mapping.pdb"
+  "/GPFS/data/zxlei/CollaborativePerception/Forcast/LatencyVersion/pairwise_fusion_kd/mapping.cpython-36m-x86_64-linux-gnu.so"
+  "/GPFS/data/zxlei/CollaborativePerception/Forcast/LatencyVersion/pairwise_fusion_kd/mapping.pdb"
   "CMakeFiles/mapping.dir/mapping.cpp.o"
 )
 

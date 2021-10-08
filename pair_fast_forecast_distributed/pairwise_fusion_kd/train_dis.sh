@@ -1,0 +1,2 @@
+conda activate 3090
+python train_faf_com_kd_distributed.py --data /GPFS/data/slren/dataset_warp_kd/train --logpath /GPFS/data/zxlei/CollaborativePerception/Forcast/LatencyVersion/pair_fast_forecast_distributed/pairwise_fusion_kd/log --mode train --lr 0.001 --batch 24 --nepoch 150 --binary 1 --world_size 8 --log

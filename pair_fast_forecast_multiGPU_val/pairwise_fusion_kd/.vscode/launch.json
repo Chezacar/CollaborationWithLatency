@@ -14,7 +14,7 @@
                 "--mode",
                 "train",
                 "--data",
-                "/GPFS/data/slren/dataset_warp_kd/train/",
+                "/GPFS/data/zxlei/dataset/test/train/",
                 "--logpath",
                 "/GPFS/data/zxlei/CollaborativePerception/Forcast/LatencyVersion/pairwise_fast/pairwise_fusion_kd/log",
                 "--batch",
@@ -32,7 +32,7 @@
                 // "--resume_teacher",
                 // "/DATA_SSD/slren/teacher_aug_batch_4_epoch_100.pth"
             ],
-            "env": {"CUDA_VISIBLE_DEVICES": "7"}
+            "env": {"CUDA_VISIBLE_DEVICES": "1"}
         }
     ]
 }

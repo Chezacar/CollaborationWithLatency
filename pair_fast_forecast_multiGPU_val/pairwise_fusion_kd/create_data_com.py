@@ -525,12 +525,12 @@ def convert_to_sparse_bev(config,dense_bev_data,use_motion_state = False):
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('-r', '--root', default='/data_1/yml/carScene-1', type=str, help='Root path to nuScenes dataset')
+    parser.add_argument('-r', '--root', default='/DATA_HDD/slren/complete', type=str, help='Root path to nuScenes dataset')
     parser.add_argument('-s', '--split', default='train', type=str, help='The data split [train/val/test]')
     parser.add_argument('-c', '--current_agent', default=0, type=int, help='current_agent')
     parser.add_argument('-b', '--scene_begin', default=0, type=int, help='scene_begin')
     parser.add_argument('-e', '--scene_end', default=80, type=int, help='scene_end')
-    parser.add_argument('-p', '--savepath', default='./dataset/', type=str, help='Directory for saving the generated data')
+    parser.add_argument('-p', '--savepath', default='/GPFS/data/zxlei/dataset/test', type=str, help='Directory for saving the generated data')
     args = parser.parse_args()
 
     nusc = NuScenes(version='v1.0-mini', dataroot=args.root, verbose=True)

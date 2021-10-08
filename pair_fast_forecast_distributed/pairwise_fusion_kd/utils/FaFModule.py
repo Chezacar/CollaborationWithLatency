@@ -1,3 +1,6 @@
+from numpy.lib.function_base import vectorize
+from numpy.matrixlib.defmatrix import matrix
+from numpy.testing._private.utils import tempdir
 import torch.nn.functional as F
 import torch.nn as nn
 import torch
@@ -8,6 +11,7 @@ from utils.min_norm_solvers import MinNormSolver
 import numpy
 import matplotlib.pyplot as plt
 from data.obj_util import coor_to_vis
+from nuscenes.utils.geometry_utils import view_points, transform_matrix
 
 class FaFModule(object):
 	def __init__(self, model,config,optimizer,criterion):
@@ -155,6 +159,23 @@ class FaFModule(object):
 		elif loss_num == 4:
 			return (loss_num,loss, loss_cls,loss_loc_1,loss_loc_2,loss_motion)
 
+	def vector_2_mat(self, batch_size, ref_cs_rec, ref_pose_rec, inverse_flag = True, standard_matrix = 0):
+		# print(len(current_cs_rec))
+		# ref_cs_rec = current_cs_rec[0][3]
+		# ref_pose_rec = current_cs_rec[0][3]
+		matrix_list = []
+		for batch in range(batch_size):
+			ref_pose_rec_translation = [ref_pose_rec['translation'][0][batch], ref_pose_rec['translation'][1][batch], ref_pose_rec['translation'][2][batch]]
+			ref_pose_rec_rotation = [ref_pose_rec['rotation'][0][batch], ref_pose_rec['rotation'][1][batch], ref_pose_rec['rotation'][2][batch], ref_pose_rec['rotation'][3][batch]]
+			ref_cs_rec_translation = [ref_cs_rec['translation'][0][batch], ref_cs_rec['translation'][1][batch], ref_cs_rec['translation'][2][batch]]
+			ref_cs_rec_rotation = [ref_cs_rec['rotation'][0][batch], ref_cs_rec['rotation'][1][batch], ref_cs_rec['rotation'][2][batch], ref_cs_rec['rotation'][3][batch]]
+			standard_global_from_car = transform_matrix(ref_pose_rec_translation, Quaternion(ref_pose_rec_rotation), inverse = inverse_flag)
+			standard_ref_car_from_current  = transform_matrix(ref_cs_rec_translation, Quaternion(ref_cs_rec_rotation), inverse = inverse_flag)
+			temp_matrix = np.dot(standard_global_from_car, standard_ref_car_from_current)
+			if inverse_flag == True:
+				temp_matrix = np.dot(standard_matrix[batch], temp_matrix)
+			matrix_list.append(temp_matrix)
+		return matrix_list
 
 	def step(self,data,batch_size, center_agent, forecast_num, rank = 0):
 		# batch_size = int(batch_size / torch.cuda.device_count())
@@ -166,6 +187,20 @@ class FaFModule(object):
 		vis_maps = data['vis_maps']
 		trans_matrices = data['trans_matrices']
 		num_agent = data['num_agent']
+		current_pose_rec = data['current_pose_rec']
+		current_cs_rec = data['current_cs_rec']
+
+		to_new_trans_mat_list = []
+		standard_matrix = self.vector_2_mat(batch_size, current_cs_rec[0][3], current_pose_rec[0][3], False)
+		for iter_1 in range(len(current_cs_rec)):
+			to_new_trans_mat_list.append([])
+			for iter_2 in range(len(current_cs_rec[0])):
+				inverse_flag = True
+				if iter_1 == 0 and iter_2 == 3:
+					inverse_flag == False
+				current_cs_rec_item = current_cs_rec[iter_1][iter_2]
+				current_pose_rec_item = current_pose_rec[iter_1][iter_2]
+				to_new_trans_mat_list[iter_1].append(self.vector_2_mat(batch_size, current_cs_rec_item, current_pose_rec_item, inverse_flag, standard_matrix))
 		newest_time = torch.zeros((batch_size, 1))
 		delta_t = []
 		for iter in range(batch_size):
@@ -183,7 +218,7 @@ class FaFModule(object):
 			x = self.encoder(bev_seq)
 			result = self.head(x)
 		else:
-			result = self.model(bev_seq, trans_matrices, num_agent, batch_size=batch_size, center_agent = center_agent, delta_t = delta_t, rank = rank)
+			result = self.model(bev_seq, trans_matrices, num_agent, to_new_trans_mat_list, batch_size=batch_size, center_agent = center_agent, delta_t = delta_t, rank = rank)
 
 		# labels = labels[:,-1]
 		# anchors = anchors[:, -1]

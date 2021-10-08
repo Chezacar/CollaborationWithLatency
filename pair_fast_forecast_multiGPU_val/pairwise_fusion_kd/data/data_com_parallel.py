@@ -367,6 +367,8 @@ class CarscenesDataset(Dataset):
             gt_data_handle = np.load(os.path.join(seq_file, '0.npy'), allow_pickle=True)
             if gt_data_handle == 0:
                 empty_flag = True
+                data_return['current_pose_rec'] = {'token': '5ntnl2o4swb2v45g912bw6u8p15os2nb', 'timestamp': 999999, 'rotation': [0,0,0,0], 'translation': [0,0,0]}
+                data_return['current_cs_rec'] = {'token': '5ntnl2o4swb2v45g912bw6u8p15os2lr', 'camera_intrinsic': [], 'sensor_token':'123123124r14512', 'rotation': [0,0,0,0], 'translation': [0,0,0]}
                 padded_voxel_points = np.zeros(self.padded_voxel_points_example.shape).astype(np.float32)
                 label_one_hot = np.zeros(self.label_one_hot_example.shape).astype(np.float32)
                 reg_target = np.zeros(self.reg_target_example.shape).astype(np.float32)
@@ -443,6 +445,8 @@ class CarscenesDataset(Dataset):
                 # if len(self.cache) < self.cache_size:
                 #     self.cache[idx] = gt_dict
             if empty_flag == False:
+                data_return['current_pose_rec'] = gt_dict['current_pose_rec']
+                data_return['current_cs_rec'] = gt_dict['current_cs_rec']
                 allocation_mask = gt_dict['allocation_mask'].astype(np.bool)
                 reg_loss_mask = gt_dict['reg_loss_mask'].astype(np.bool)
                 gt_max_iou = gt_dict['gt_max_iou']
@@ -787,6 +791,8 @@ class CarscenesDataset(Dataset):
                 data_return[agent]['target_agent_id'] = []
                 data_return[agent]['num_sensor'] = []
                 data_return[agent]['trans_matrices'] = []
+                data_return[agent]['current_pose_rec'] = []
+                data_return[agent]['current_cs_rec'] = []
                 # data_return[agent]['label_one_hot'] = []
                 # data_return[agent]['reg_target'] = []
                 # data_return[agent]['reg_loss_mask'] = []
@@ -806,6 +812,8 @@ class CarscenesDataset(Dataset):
                 data_return[agent]['target_agent_id'] = []
                 data_return[agent]['num_sensor'] = []
                 data_return[agent]['trans_matrices'] = []
+                data_return[agent]['current_pose_rec'] = []
+                data_return[agent]['current_cs_rec'] = []
 
             for iter in range(self.forecast_num):
                 temp =  res[agent * self.forecast_num + iter]
@@ -817,13 +825,15 @@ class CarscenesDataset(Dataset):
                     data_return[agent]['target_agent_id'].append(temp['target_agent_id'])
                     data_return[agent]['num_sensor'].append(temp['num_sensor'])
                     data_return[agent]['trans_matrices'].append(temp['trans_matrices'])
+                    data_return[agent]['current_pose_rec'].append(temp['current_pose_rec'])
+                    data_return[agent]['current_cs_rec'].append(temp['current_cs_rec'])
                     # data_return[agent]['label_one_hot'].append(temp['label_one_hot'])
                     # data_return[agent]['reg_target'].append(temp['reg_target'])
                     # data_return[agent]['reg_loss_mask'].append(temp['reg_loss_mask'])
                     # data_return[agent]['anchors_map'].append(temp['anchors_map'])
                     # data_return[agent]['vis_maps'].append(temp['vis_maps'])
                     # data_return[agent]['gt_max_iou'].append(temp['gt_max_iou'])
-                    if iter == 0:
+                    if iter ==self.forecast_num - 1:
                         data_return[agent]['label_one_hot'] = temp['label_one_hot']
                         data_return[agent]['reg_target'] = temp['reg_target']
                         data_return[agent]['reg_loss_mask'] = temp['reg_loss_mask']
@@ -843,7 +853,9 @@ class CarscenesDataset(Dataset):
                     data_return[agent]['target_agent_id'] .append(temp['target_agent_id'])
                     data_return[agent]['num_sensor'].append(temp['num_sensor'])
                     data_return[agent]['trans_matrices'].append(temp['trans_matrices'])
-                    if iter  == 0:
+                    data_return[agent]['current_pose_rec'].append(temp['current_pose_rec'])
+                    data_return[agent]['current_cs_rec'].append(temp['current_cs_rec'])
+                    if iter  == self.forecast_num - 1:
                         data_return[agent]['padded_voxel_points_teacher'] = temp['padded_voxel_points_teacher']
                         data_return[agent]['label_one_hot'] = temp['label_one_hot']
                         data_return[agent]['reg_target'] = temp['reg_target']

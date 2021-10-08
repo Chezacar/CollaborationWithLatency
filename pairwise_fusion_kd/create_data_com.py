@@ -74,7 +74,7 @@ def create_data(config,nusc,current_agent,config_global,scene_begin,scene_end):
             all_pc_teacher, _ = LidarPointCloud.from_file_multisweep_upperbound_sample_data(nusc, curr_sample_data,
                                                                                             return_trans_matrix=False)
             # Get the synchronized point clouds
-            all_pc, all_times, trans_matrices, target_agent_id, num_sensor = \
+            all_pc, all_times, trans_matrices, target_agent_id, num_sensor, current_pose_rec, current_cs_rec = \
                 LidarPointCloud.from_file_multisweep_warp2com_sample_data(current_agent, nusc, curr_sample_data,
                                                                     return_trans_matrix=True)
 
@@ -105,6 +105,8 @@ def create_data(config,nusc,current_agent,config_global,scene_begin,scene_end):
             save_data_dict['num_sensor'] = num_sensor
             save_data_dict['target_agent_id'] = target_agent_id
             save_data_dict['all_pc_teacher'] = all_pc_teacher.points
+            save_data_dict['current_pose_rec'] = current_pose_rec
+            save_data_dict['current_cs_rec'] = current_cs_rec
 
             if config.split == 'val' or config.split == 'test':
                box_data_dict_global = dict() # for global mAP
@@ -315,7 +317,8 @@ def convert_to_dense_bev(seq_data_dict,config):
     times = data_dict['times']
     trans_matrices = data_dict['trans_matrices']
     trans_matrices_warping = data_dict['trans_matrices']
-
+    current_pose_rec = data_dict['current_pose_rec']
+    current_cs_rec = data_dict['current_cs_rec']
     assert num_sweeps == 1, "Currently we only consider single sweep."
 
     if config.binary:
@@ -431,11 +434,11 @@ def convert_to_dense_bev(seq_data_dict,config):
 
        return voxel_indices_list, padded_voxel_points, trans_matrices_warping, trans_matrices_map, \
            label, reg_target, allocation_map, gt_max_iou, reg_loss_mask, motion_state, visibility_maps, target_agent_id, num_sensor, \
-           voxel_indices_list_global, padded_voxel_points_global, allocation_map_global, reg_target_global, gt_max_iou_global, reg_loss_mask_global
+           voxel_indices_list_global, padded_voxel_points_global, allocation_map_global, reg_target_global, gt_max_iou_global, reg_loss_mask_global, current_pose_rec, current_cs_rec
 
     else:
        return voxel_indices_list, voxel_indices_list_teacher, padded_voxel_points, trans_matrices_warping, \
-           label, reg_target, allocation_map, gt_max_iou, reg_loss_mask, motion_state, visibility_maps, target_agent_id, num_sensor
+           label, reg_target, allocation_map, gt_max_iou, reg_loss_mask, motion_state, visibility_maps, target_agent_id, num_sensor, current_pose_rec, current_cs_rec
 
 # ---------------------- Convert the dense BEV data into sparse format ----------------------
 # This will significantly reduce the space used for data storage
@@ -444,11 +447,11 @@ def convert_to_sparse_bev(config,dense_bev_data,use_motion_state = False):
     if config.split == 'val' or config.split == 'test':
        save_voxel_indices_list, save_voxel_points, save_trans_matrices_warp, save_trans_matrices_map, \
            save_label,save_reg_target,save_allocation_mask,gt_max_iou,reg_loss_mask,motion_state,visibility_maps, target_agent_id, num_sensor, \
-           voxel_indices_list_global, padded_voxel_points_global, allocation_map_global, reg_target_global, gt_max_iou_global, reg_loss_mask_global\
+           voxel_indices_list_global, padded_voxel_points_global, allocation_map_global, reg_target_global, gt_max_iou_global, reg_loss_mask_global, current_pose_rec, current_cs_rec\
            = dense_bev_data
     else:
        save_voxel_indices_list, voxel_indices_list_teacher, save_voxel_points, save_trans_matrices_warp, \
-           save_label,save_reg_target,save_allocation_mask,gt_max_iou,reg_loss_mask,motion_state,visibility_maps, target_agent_id, num_sensor\
+           save_label,save_reg_target,save_allocation_mask,gt_max_iou,reg_loss_mask,motion_state,visibility_maps, target_agent_id, num_sensor, current_pose_rec, current_cs_rec\
            = dense_bev_data
 
     save_voxel_dims = save_voxel_points.shape[1:]
@@ -484,6 +487,8 @@ def convert_to_sparse_bev(config,dense_bev_data,use_motion_state = False):
     save_data_dict['trans_matrices'] = save_trans_matrices_warp
     save_data_dict['voxel_indices_teacher'] = voxel_indices_list_teacher[0].astype(np.int32)
 
+    save_data_dict['current_pose_rec'] = current_pose_rec
+    save_data_dict['current_cs_rec'] = current_cs_rec
 
     #"For global mAP evaluation."
     if config.split == 'val' or config.split == 'test':
@@ -525,12 +530,12 @@ def convert_to_sparse_bev(config,dense_bev_data,use_motion_state = False):
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('-r', '--root', default='/data_1/yml/carScene-1', type=str, help='Root path to nuScenes dataset')
+    parser.add_argument('-r', '--root', default='/DATA_HDD/slren/complete', type=str, help='Root path to nuScenes dataset')
     parser.add_argument('-s', '--split', default='train', type=str, help='The data split [train/val/test]')
     parser.add_argument('-c', '--current_agent', default=0, type=int, help='current_agent')
     parser.add_argument('-b', '--scene_begin', default=0, type=int, help='scene_begin')
     parser.add_argument('-e', '--scene_end', default=80, type=int, help='scene_end')
-    parser.add_argument('-p', '--savepath', default='./dataset/', type=str, help='Directory for saving the generated data')
+    parser.add_argument('-p', '--savepath', default='/GPFS/data/zxlei/dataset/test/', type=str, help='Directory for saving the generated data')
     args = parser.parse_args()
 
     nusc = NuScenes(version='v1.0-mini', dataroot=args.root, verbose=True)
@@ -538,7 +543,7 @@ if __name__ == "__main__":
     scene_begin = args.scene_begin
     scene_end = args.scene_end
 
-    for current_agent in [4]:
+    for current_agent in [0,1,2,3,4]:
         savepath = check_folder(args.savepath + args.split + '/agent' + str(current_agent))
         config = Config(args.split,True,savepath=savepath)
         config_global = ConfigGlobal(args.split,True,savepath=savepath)

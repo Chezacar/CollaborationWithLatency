@@ -173,7 +173,7 @@ def main(config, config_global, args):
                                      reg_loss_mask_example, \
                                      anchors_map_example, motion_one_hot_example, motion_mask_example, vis_maps_example,
                                      dataset_root=args.data, config=config, config_global=config_global, agent_list = ['/agent0', '/agent1', '/agent2', '/agent3', '/agent4'],
-                                     split='val', val=True)
+                                     split='val', val=True, forecast_num = forecast_num)
         # valset0 = CarscenesDataset(padded_voxel_points_example, label_one_hot_example, reg_target_example,
         #                            reg_loss_mask_example, \
         #                            anchors_map_example, motion_one_hot_example, motion_mask_example, vis_maps_example,
@@ -330,11 +330,11 @@ def main(config, config_global, args):
             step_ct = 1
             t = time.time()
 
-            # random.shuffle(indices)
+            random.shuffle(indices)
             train_sampler = torch.utils.data.sampler.BatchSampler(torch.utils.data.sampler.SubsetRandomSampler(indices),
                                                                   batch_size=batch_size, drop_last=False)
 
-            trainloader = torch.utils.data.DataLoader(trainset, shuffle=True, batch_sampler=train_sampler, num_workers=num_workers)
+            trainloader = torch.utils.data.DataLoader(trainset, batch_sampler=train_sampler, num_workers=num_workers)
             # trainloader1 = torch.utils.data.DataLoader(trainset1, shuffle=False, batch_sampler=train_sampler, num_workers=num_workers)
             # trainloader2 = torch.utils.data.DataLoader(trainset2, shuffle=False, batch_sampler=train_sampler, num_workers=num_workers)
             # trainloader3 = torch.utils.data.DataLoader(trainset3, shuffle=False, batch_sampler=train_sampler, num_workers=num_workers)
@@ -346,14 +346,16 @@ def main(config, config_global, args):
                 time_t0 = time.time()
                 print("返回时间", time_t0 - trainset.time_4)
                 # padded_voxel_points0, padded_voxel_points_teacher0, label_one_hot0, reg_target0, reg_loss_mask0, anchors_map0, vis_maps0, target_agent_id0, num_sensor0, trans_matrices0,center_agent  = sample
-                padded_voxel_points0, padded_voxel_points_teacher0, label_one_hot0, reg_target0, reg_loss_mask0, anchors_map0, vis_maps0, target_agent_id0, num_sensor0, trans_matrices0, filename0 = sample[0]['padded_voxel_points'] ,sample[0]['padded_voxel_points_teacher'] ,sample[0]['label_one_hot'] ,sample[0]['reg_target'] ,sample[0]['reg_loss_mask'] ,sample[0]['anchors_map'] ,sample[0]['vis_maps'] ,sample[0]['target_agent_id'] ,sample[0]['num_sensor'] ,sample[0]['trans_matrices'], sample[0]['filename']
-                padded_voxel_points1, padded_voxel_points_teacher1, label_one_hot1, reg_target1, reg_loss_mask1, anchors_map1, vis_maps1, target_agent_id1, num_sensor1, trans_matrices1, filename1 = sample[1]['padded_voxel_points'] ,sample[1]['padded_voxel_points_teacher'] ,sample[1]['label_one_hot'] ,sample[1]['reg_target'] ,sample[1]['reg_loss_mask'] ,sample[1]['anchors_map'] ,sample[1]['vis_maps'] ,sample[1]['target_agent_id'] ,sample[1]['num_sensor'] ,sample[1]['trans_matrices'], sample[1]['filename']
-                padded_voxel_points2, padded_voxel_points_teacher2, label_one_hot2, reg_target2, reg_loss_mask2, anchors_map2, vis_maps2, target_agent_id2, num_sensor2, trans_matrices2, filename2 = sample[2]['padded_voxel_points'] ,sample[2]['padded_voxel_points_teacher'] ,sample[2]['label_one_hot'] ,sample[2]['reg_target'] ,sample[2]['reg_loss_mask'] ,sample[2]['anchors_map'] ,sample[2]['vis_maps'] ,sample[2]['target_agent_id'] ,sample[2]['num_sensor'] ,sample[2]['trans_matrices'], sample[2]['filename']
-                padded_voxel_points3, padded_voxel_points_teacher3, label_one_hot3, reg_target3, reg_loss_mask3, anchors_map3, vis_maps3, target_agent_id3, num_sensor3, trans_matrices3, filename3 = sample[3]['padded_voxel_points'] ,sample[3]['padded_voxel_points_teacher'] ,sample[3]['label_one_hot'] ,sample[3]['reg_target'] ,sample[3]['reg_loss_mask'] ,sample[3]['anchors_map'] ,sample[3]['vis_maps'] ,sample[3]['target_agent_id'] ,sample[3]['num_sensor'] ,sample[3]['trans_matrices'], sample[3]['filename']
-                padded_voxel_points4, padded_voxel_points_teacher4, label_one_hot4, reg_target4, reg_loss_mask4, anchors_map4, vis_maps4, target_agent_id4, num_sensor4, trans_matrices4, filename4 = sample[4]['padded_voxel_points'] ,sample[4]['padded_voxel_points_teacher'] ,sample[4]['label_one_hot'] ,sample[4]['reg_target'] ,sample[4]['reg_loss_mask'] ,sample[4]['anchors_map'] ,sample[4]['vis_maps'] ,sample[4]['target_agent_id'] ,sample[4]['num_sensor'] ,sample[4]['trans_matrices'], sample[4]['filename']
+                padded_voxel_points0, padded_voxel_points_teacher0, label_one_hot0, reg_target0, reg_loss_mask0, anchors_map0, vis_maps0, target_agent_id0, num_sensor0, trans_matrices0, filename0, current_pose_rec0, current_cs_rec0 = sample[0]['padded_voxel_points'] ,sample[0]['padded_voxel_points_teacher'] ,sample[0]['label_one_hot'] ,sample[0]['reg_target'] ,sample[0]['reg_loss_mask'] ,sample[0]['anchors_map'] ,sample[0]['vis_maps'] ,sample[0]['target_agent_id'] ,sample[0]['num_sensor'] ,sample[0]['trans_matrices'], sample[0]['filename'], sample[0]['current_pose_rec'], sample[0]['current_cs_rec']
+                padded_voxel_points1, padded_voxel_points_teacher1, label_one_hot1, reg_target1, reg_loss_mask1, anchors_map1, vis_maps1, target_agent_id1, num_sensor1, trans_matrices1, filename1, current_pose_rec1, current_cs_rec1 = sample[1]['padded_voxel_points'] ,sample[1]['padded_voxel_points_teacher'] ,sample[1]['label_one_hot'] ,sample[1]['reg_target'] ,sample[1]['reg_loss_mask'] ,sample[1]['anchors_map'] ,sample[1]['vis_maps'] ,sample[1]['target_agent_id'] ,sample[1]['num_sensor'] ,sample[1]['trans_matrices'], sample[1]['filename'], sample[1]['current_pose_rec'], sample[1]['current_cs_rec']
+                padded_voxel_points2, padded_voxel_points_teacher2, label_one_hot2, reg_target2, reg_loss_mask2, anchors_map2, vis_maps2, target_agent_id2, num_sensor2, trans_matrices2, filename2, current_pose_rec2, current_cs_rec2 = sample[2]['padded_voxel_points'] ,sample[2]['padded_voxel_points_teacher'] ,sample[2]['label_one_hot'] ,sample[2]['reg_target'] ,sample[2]['reg_loss_mask'] ,sample[2]['anchors_map'] ,sample[2]['vis_maps'] ,sample[2]['target_agent_id'] ,sample[2]['num_sensor'] ,sample[2]['trans_matrices'], sample[2]['filename'], sample[2]['current_pose_rec'], sample[2]['current_cs_rec']
+                padded_voxel_points3, padded_voxel_points_teacher3, label_one_hot3, reg_target3, reg_loss_mask3, anchors_map3, vis_maps3, target_agent_id3, num_sensor3, trans_matrices3, filename3, current_pose_rec3, current_cs_rec3 = sample[3]['padded_voxel_points'] ,sample[3]['padded_voxel_points_teacher'] ,sample[3]['label_one_hot'] ,sample[3]['reg_target'] ,sample[3]['reg_loss_mask'] ,sample[3]['anchors_map'] ,sample[3]['vis_maps'] ,sample[3]['target_agent_id'] ,sample[3]['num_sensor'] ,sample[3]['trans_matrices'], sample[3]['filename'], sample[3]['current_pose_rec'], sample[3]['current_cs_rec']
+                padded_voxel_points4, padded_voxel_points_teacher4, label_one_hot4, reg_target4, reg_loss_mask4, anchors_map4, vis_maps4, target_agent_id4, num_sensor4, trans_matrices4, filename4, current_pose_rec4, current_cs_rec4 = sample[4]['padded_voxel_points'] ,sample[4]['padded_voxel_points_teacher'] ,sample[4]['label_one_hot'] ,sample[4]['reg_target'] ,sample[4]['reg_loss_mask'] ,sample[4]['anchors_map'] ,sample[4]['vis_maps'] ,sample[4]['target_agent_id'] ,sample[4]['num_sensor'] ,sample[4]['trans_matrices'], sample[4]['filename'], sample[4]['current_pose_rec'], sample[4]['current_cs_rec']
                 center_agent = sample['center_agent']
                 time_t1 = time.time()
                 print("计时点1", time_t1 - time_t0)
+                current_pose_rec_list = [current_pose_rec0, current_pose_rec1, current_pose_rec2, current_pose_rec3, current_pose_rec4]
+                current_cs_rec0_list = [current_cs_rec0, current_cs_rec1, current_cs_rec2, current_cs_rec3, current_cs_rec4]
                 padded_voxel_points_list = [padded_voxel_points0, padded_voxel_points1, padded_voxel_points2, padded_voxel_points3, padded_voxel_points4]
                 # label_one_hot_list = [label_one_hot0, label_one_hot1, label_one_hot2, label_one_hot3, label_one_hot4]
                 # reg_target_list = [reg_target0, reg_target1, reg_target2, reg_target3, reg_target4]
@@ -387,6 +389,8 @@ def main(config, config_global, args):
                 time_t4 = time.time()
                 print("计时点4", time_t4 - time_t3)
                 data = {}
+                data['current_pose_rec'] = current_pose_rec_list
+                data['current_cs_rec'] = current_cs_rec0_list
                 data['file_name'] = [filename0, filename1, filename2, filename3, filename4]
                 data['bev_seq'] = padded_voxel_points.to(device)
                 time_t5_0 = time.time()

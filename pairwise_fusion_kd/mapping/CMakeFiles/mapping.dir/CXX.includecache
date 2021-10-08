@@ -6,3 +6,19 @@
 
 #IncludeRegexTransform: 
 
+/GPFS/data/zxlei/CollaborativePerception/Forcast/LatencyVersion/pairwise_fusion_kd/mapping/mapping.cpp
+pybind11/pybind11.h
+-
+pybind11/eigen.h
+-
+pybind11/stl.h
+-
+cmath
+-
+cfloat
+-
+vector
+-
+chrono
+-
+

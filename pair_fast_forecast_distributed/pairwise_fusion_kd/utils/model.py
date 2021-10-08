@@ -5,6 +5,21 @@ import torch.nn as nn
 import torch
 import ipdb
 
+class MotionPrediction(nn.Module):
+    def __init__(self, seq_len):
+        super(MotionPrediction, self).__init__()
+        self.conv1 = nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=1)
+        self.conv2 = nn.Conv2d(32, 2 * seq_len, kernel_size=1, stride=1, padding=0)
+
+        self.bn1 = nn.BatchNorm2d(32)
+
+    def forward(self, x):
+        x = F.relu(self.bn1(self.conv1(x)))
+        x = self.conv2(x)
+
+        return x
+
+
 class forecast_lstm(nn.Module):
     def __init__(self):
         super(forecast_lstm, self).__init__()

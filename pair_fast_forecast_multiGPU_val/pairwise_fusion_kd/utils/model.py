@@ -5,6 +5,51 @@ import torch.nn as nn
 import torch
 import ipdb
 
+
+class MotionPrediction(nn.Module):
+    def __init__(self, seq_len = 10):
+        super(MotionPrediction, self).__init__()
+        self.conv1 = nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=1)
+        self.conv2 = nn.Conv2d(32, 2 * seq_len, kernel_size=1, stride=1, padding=0)
+
+        self.bn1 = nn.BatchNorm2d(32)
+
+    def forward(self, x):
+        x = F.relu(self.bn1(self.conv1(x)))
+        x = self.conv2(x)
+
+        return x
+
+
+class MotionNet(nn.Module):
+    def __init__(self, out_seq_len=20, motion_category_num=2, height_feat_size=13):
+        super(MotionNet, self).__init__()
+        self.out_seq_len = out_seq_len
+
+        # self.cell_classify = CellClassification()
+        self.motion_pred = MotionPrediction(seq_len=self.out_seq_len)
+        # self.state_classify = StateEstimation(motion_category_num=motion_category_num)
+        self.stpn = STPN(height_feat_size=height_feat_size)
+
+
+    def forward(self, bevs,delta_t):
+        bevs = bevs.permute(0, 1, 4, 2, 3)  # (Batch, seq, z, h, w)
+
+        # Backbone network
+        x = self.stpn(bevs)
+
+        # # Cell Classification head
+        # cell_class_pred = self.cell_classify(x)
+
+        # # Motion State Classification head
+        # state_class_pred = self.state_classify(x)
+
+        # Motion Displacement prediction
+        disp = self.motion_pred(x)
+        disp = disp.view(-1, 2, x.size(-2), x.size(-1))
+
+        return disp
+
 class forecast_lstm(nn.Module):
     def __init__(self):
         super(forecast_lstm, self).__init__()

@@ -1,7 +1,8 @@
+from numpy.core.fromnumeric import shape
 import torch.nn.functional as F
 import torch.nn as nn
 import torch
-from utils.model import STPN, STPN_KD, MapExtractor, lidar_encoder, lidar_decoder, lidar_decoder_kd, conv2DBatchNormRelu, Sparsemax, adafusionlayer,sigmoidfusionlayer, pairfusionlayer,pairfusionlayer_1, pairfusionlayer_2, pairfusionlayer_3 ,pairfusionlayer_4
+from utils.model import STPN, STPN_KD, MapExtractor, forecast_lstm, lidar_encoder, lidar_decoder, lidar_decoder_kd, conv2DBatchNormRelu, Sparsemax, adafusionlayer,sigmoidfusionlayer, pairfusionlayer,pairfusionlayer_1, pairfusionlayer_2, pairfusionlayer_3 ,pairfusionlayer_4
 import numpy as np
 import copy
 import torchgeometry as tgm
@@ -566,13 +567,13 @@ class FaFMIMONet_256_32_32(nn.Module):
         self.u_encoder = lidar_encoder(height_feat_size=in_channels)
         self.agent_num = 5
         self.shared_img_encoder = shared_img_encoder
-
+        self.forecast =forecast_lstm()
         self.adafusion = pairfusionlayer_3(input_channel=256)
 
 
         # Detection decoder
         self.decoder = lidar_decoder(height_feat_size=in_channels)
-
+    
 
     def agents2batch(self, feats):
         agent_num = feats.shape[1]
@@ -582,11 +583,83 @@ class FaFMIMONet_256_32_32(nn.Module):
         feat_mat = torch.cat(tuple(feat_list), 0)
         return feat_mat
 
-    def forward(self, bevs, trans_matrices, num_agent_tensor, vis=None, training=True, MO_flag=True, inference='activated', batch_size=2, center_agent = 0):
-        
-        bevs = bevs.permute(0, 1, 4, 2, 3) # (Batch, seq, z, h, w)
+    def trans2center_now(self, device, bevs, trans2center_now, batch_size,num_agent_tensor, center_agent = 0):
+        bevs_update = bevs
+        size = bevs[0,0].shape
+        for b in range(batch_size):
+            try: 
+                center_agent_int = int(center_agent[b])
+            except:
+                center_agent_int = center_agent
+            num_agent = int(num_agent_tensor[b, center_agent_int])
+            if num_agent == 0:
+                break
+            i = int(center_agent_int)
+            # for i in range(num_agent):
+            # tg_agent = []
+            # tg_agent.append(local_com_mat[b, i])
+            # all_warp = trans_matrices[b, i, -1] # transformation [2 5 5 4 4]
 
-        x,x_1,x_2,x_3,x_4 = self.u_encoder(bevs)
+            for j in range(num_agent):
+                for k in range(len(trans2center_now[0])):
+                    if j != i or k == (len(trans2center_now[0]) - 1):
+                        # nb_agent = torch.unsqueeze(local_com_mat[b, j], 0) # [1 512 16 16]
+                        nb_agent = bevs[j*batch_size + b][k]
+                        # nb_warp = all_warp[j] # [4 4]
+                        nb_warp = trans2center_now[j][k][b]
+                        # normalize the translation vector
+                        x_trans = (4*nb_warp[0, 3])/128
+                        y_trans = -(4*nb_warp[1, 3])/128
+                        theta_rot = torch.tensor([[nb_warp[0,0], nb_warp[0,1], 0.0], [nb_warp[1,0], nb_warp[1,1], 0.0]]).type(dtype=torch.float).to(device)
+                        theta_rot = torch.unsqueeze(theta_rot, 0)
+                        grid_rot = F.affine_grid(theta_rot, size=torch.Size(size))  # 得到grid 用于grid sample
+                        theta_trans = torch.tensor([[1.0, 0.0, x_trans], [0.0, 1.0, y_trans]]).type(dtype=torch.float).to(device)
+                        theta_trans = torch.unsqueeze(theta_trans, 0)
+                        grid_trans = F.affine_grid(theta_trans, size=torch.Size(size))  # 得到grid 用于grid sample
+                        #first rotate the feature map, then translate it
+                        warp_feat_rot = F.grid_sample(nb_agent, grid_rot, mode='bilinear')
+                        warp_feat_trans = F.grid_sample(warp_feat_rot, grid_trans, mode='bilinear')
+                        warp_feat = torch.squeeze(warp_feat_trans)
+                        # tg_agent.append(warp_feat.type(dtype=torch.float32))
+                        bevs_update [[j*batch_size + b]] = warp_feat.type(dtype=torch.float32)
+            
+        return bevs_update 
+        
+    def forward(self, bevs, trans_matrices, num_agent_tensor, to_new_trans_mat_list, vis=None, training=True, MO_flag=True, inference='activated', batch_size=2, center_agent = 0, delta_t = [0,10,10,10,10], rank = 0):
+        device = bevs.device
+        # batch_size /= torch.cuda.device_count()
+        # batch_size = int(batch_size)
+        bevs = bevs.permute(0, 1, 2, 5, 3, 4) # (Batch, seq, z, h, w)
+        bev = self.trans2center_now(device, bevs, to_new_trans_mat_list, batch_size, num_agent_tensor, center_agent)
+        shape_a,shape_b,shape_c,shape_d,shape_e,shape_f, = bevs.shape
+        # bevs_new = bevs.reshape((shape_a * shape_b , shape_c, shape_d, shape_e, shape_f))
+        x,x_1,x_2,x_3,x_4 = self.u_encoder(bevs[:,-1])
+
+        # for iter1 in range(len(delta_t)):
+        #     x_feature_list_1 = []
+        #     for iter2 in range(batch_size):
+        #         x_feature_list_2 = []
+        #         for iter3 in range(len(shape_b)):
+        #             x_feature_list_2.append()
+
+        # for i in range(bevs.shape[0]):
+        #     batch = int(i / len(delta_t[0]))
+        #     inbatch = int(i % len(delta_t[0]))
+        #     x_temp, x_1_temp, x_2_temp, x_3_temp, x_4_temp = self.u_encoder(bevs[i])
+        #     if delta_t[batch][inbatch] > 0:
+        #         x_feature_list.append(self.forecast(x_3_temp, delta_t[batch][inbatch]))
+        #     else:
+        #         x_feature_list.append(torch.unsqueeze(x_3_temp[-1], 0))
+        x_feature_list = []
+        for batch in range(batch_size):
+            for inbatch in range(len(delta_t[0])):
+                x_temp, x_1_temp, x_2_temp, x_3_temp, x_4_temp = self.u_encoder(bevs[batch * len(delta_t[0]) + inbatch])
+                if delta_t[batch][inbatch] > 0:
+                    
+                    x_feature_list.append(self.forecast(x_3_temp, delta_t[batch][inbatch]))
+                else:
+                    x_feature_list.append(torch.unsqueeze(x_3_temp[-1], 0))
+        x_3 = torch.cat(tuple(x_feature_list), 0)
         device = bevs.device
         size = (1, 256, 32, 32)
         padding_feat = torch.zeros((256,32,32)).cuda()
@@ -600,61 +673,56 @@ class FaFMIMONet_256_32_32(nn.Module):
         feat_list = []
 
         for i in range(self.agent_num):
-            temp_list = []
-            # for j in range(batch_size):
-            #     temp_list.append(feat_maps[self.agent_num * j + i])
-            # feat_map[i] = torch.unsqueeze(feat_maps[batch_size * i:batch_size * (i + 1)], 1)
-            # feat_map[i] = torch.unsqueeze(torch.Tensor(temp_list))
-            feat_map[i] = torch.unsqueeze(torch.cat([torch.unsqueeze(feat_maps[self.agent_num * j + i],0) for j in range(batch_size)]), 1)
-            # print(feat_map[i].shape)
+            feat_map[i] = torch.unsqueeze(feat_maps[batch_size * i:batch_size * (i + 1)], 1)
             feat_list.append(feat_map[i])
 
         local_com_mat = torch.cat(tuple(feat_list), 1) # [2 5 512 16 16] [batch, agent, channel, height, width]
         local_com_mat_update = torch.cat(tuple(feat_list), 1) # to avoid the inplace operation
-        # print(local_com_mat .shape)
+
         for b in range(batch_size):
-            num_agent_tensor = num_agent_tensor.reshape((batch_size, -1))
-            # print(num_agent_tensor.shape)
-            num_agent = num_agent_tensor[b, 0]
-            # for i in range(int(num_agent)):
+            try: 
+                center_agent_int = int(center_agent[b])
+            except:
+                center_agent_int = center_agent
+            num_agent = int(num_agent_tensor[b, center_agent_int])
+            if num_agent == 0:
+                break
+            i = int(center_agent_int)
+            # for i in range(num_agent):
             tg_agent = []
-            tg_agent.append(local_com_mat[b, center_agent])
-            all_warp = trans_matrices[self.agent_num * b + center_agent] # transformation [2 5 5 4 4] # now [10,5,4,4]
-            for j in range(int(num_agent)):
-                if j != center_agent:
+            tg_agent.append(local_com_mat[b, i])
+            all_warp = trans_matrices[b, i, -1] # transformation [2 5 5 4 4]
+            for j in range(num_agent):
+                if j != i:
                     nb_agent = torch.unsqueeze(local_com_mat[b, j], 0) # [1 512 16 16]
                     nb_warp = all_warp[j] # [4 4]
                     # normalize the translation vector
                     x_trans = (4*nb_warp[0, 3])/128
                     y_trans = -(4*nb_warp[1, 3])/128
-
                     theta_rot = torch.tensor([[nb_warp[0,0], nb_warp[0,1], 0.0], [nb_warp[1,0], nb_warp[1,1], 0.0]]).type(dtype=torch.float).to(device)
                     theta_rot = torch.unsqueeze(theta_rot, 0)
                     grid_rot = F.affine_grid(theta_rot, size=torch.Size(size))  # 得到grid 用于grid sample
-
                     theta_trans = torch.tensor([[1.0, 0.0, x_trans], [0.0, 1.0, y_trans]]).type(dtype=torch.float).to(device)
                     theta_trans = torch.unsqueeze(theta_trans, 0)
                     grid_trans = F.affine_grid(theta_trans, size=torch.Size(size))  # 得到grid 用于grid sample
-
                     #first rotate the feature map, then translate it
                     warp_feat_rot = F.grid_sample(nb_agent, grid_rot, mode='bilinear')
                     warp_feat_trans = F.grid_sample(warp_feat_rot, grid_trans, mode='bilinear')
                     warp_feat = torch.squeeze(warp_feat_trans)
-
                     tg_agent.append(warp_feat.type(dtype=torch.float32))
 
                 # for k in range(5-num_agent):
                 #     tg_agent.append(padding_feat)
 
             tg_agent=torch.stack(tg_agent)
-            tg_agent = self.adafusion(tg_agent)
+            tg_agent = self.adafusion(tg_agent, rank)
 
             local_com_mat_update[b, i] = tg_agent
 
         # weighted feature maps is passed to decoder
         feat_fuse_mat = self.agents2batch(local_com_mat_update)
         x = self.decoder(x,x_1,x_2,feat_fuse_mat,x_4,batch_size)
-
+        x = torch.stack([x[i * self.agent_num] for i in range(batch_size)])
         # vis = vis.permute(0, 3, 1, 2)
         # if not maps is None:
         #     x = torch.cat([x,maps],axis=-1)
@@ -745,37 +813,38 @@ class FaFMIMONet_256_32_32_KD(nn.Module):
             for i in range(num_agent):
                 tg_agent = []
                 tg_agent.append(local_com_mat[b, i])
-                # all_warp = trans_matrices[b, i] # transformation [2 5 5 4 4]
-                # for j in range(num_agent):
-                #     if j != i:
-                #         nb_agent = torch.unsqueeze(local_com_mat[b, j], 0) # [1 512 16 16]
-                #         nb_warp = all_warp[j] # [4 4]
-                #         # normalize the translation vector
-                #         x_trans = (4*nb_warp[0, 3])/128
-                #         y_trans = -(4*nb_warp[1, 3])/128
+                all_warp = trans_matrices[b, i] # transformation [2 5 5 4 4]
+                for j in range(num_agent):
+                    if j != i:
+                        nb_agent = torch.unsqueeze(local_com_mat[b, j], 0) # [1 512 16 16]
+                        nb_warp = all_warp[j] # [4 4]
+                        # normalize the translation vector
+                        x_trans = (4*nb_warp[0, 3])/128
+                        y_trans = -(4*nb_warp[1, 3])/128
 
-                #         theta_rot = torch.tensor([[nb_warp[0,0], nb_warp[0,1], 0.0], [nb_warp[1,0], nb_warp[1,1], 0.0]]).type(dtype=torch.float).to(device)
-                #         theta_rot = torch.unsqueeze(theta_rot, 0)
-                #         grid_rot = F.affine_grid(theta_rot, size=torch.Size(size))  # 得到grid 用于grid sample
+                        theta_rot = torch.tensor([[nb_warp[0,0], nb_warp[0,1], 0.0], [nb_warp[1,0], nb_warp[1,1], 0.0]]).type(dtype=torch.float).to(device)
+                        theta_rot = torch.unsqueeze(theta_rot, 0)
+                        grid_rot = F.affine_grid(theta_rot, size=torch.Size(size))  # 得到grid 用于grid sample
 
-                #         theta_trans = torch.tensor([[1.0, 0.0, x_trans], [0.0, 1.0, y_trans]]).type(dtype=torch.float).to(device)
-                #         theta_trans = torch.unsqueeze(theta_trans, 0)
-                #         grid_trans = F.affine_grid(theta_trans, size=torch.Size(size))  # 得到grid 用于grid sample
+                        theta_trans = torch.tensor([[1.0, 0.0, x_trans], [0.0, 1.0, y_trans]]).type(dtype=torch.float).to(device)
+                        theta_trans = torch.unsqueeze(theta_trans, 0)
+                        grid_trans = F.affine_grid(theta_trans, size=torch.Size(size))  # 得到grid 用于grid sample
 
-                #         #first rotate the feature map, then translate it
-                #         warp_feat_rot = F.grid_sample(nb_agent, grid_rot, mode='bilinear')
-                #         warp_feat_trans = F.grid_sample(warp_feat_rot, grid_trans, mode='bilinear')
-                #         warp_feat = torch.squeeze(warp_feat_trans)
+                        #first rotate the feature map, then translate it
+                        warp_feat_rot = F.grid_sample(nb_agent, grid_rot, mode='bilinear')
+                        warp_feat_trans = F.grid_sample(warp_feat_rot, grid_trans, mode='bilinear')
+                        warp_feat = torch.squeeze(warp_feat_trans)
 
-                #         tg_agent.append(warp_feat.type(dtype=torch.float32))
+                        tg_agent.append(warp_feat.type(dtype=torch.float32))
 
                 # for k in range(5-num_agent):
                 #     tg_agent.append(padding_feat)
 
-                # tg_agent=torch.stack(tg_agent)
-                # tg_agent = self.adafusion(tg_agent)
+                tg_agent=torch.stack(tg_agent)
+                tg_agent = self.adafusion(tg_agent)
 
-                local_com_mat_update[b, i] = tg_agent[0]
+                # local_com_mat_update[b, i] = tg_agent[0]
+                local_com_mat_update[b, i] = tg_agent
 
         # weighted feature maps is passed to decoder
         feat_fuse_mat = self.agents2batch(local_com_mat_update)

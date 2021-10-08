@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.13.3)
+cmake_minimum_required(VERSION 3.10.2)
 project(mapping)
 
 set (CMAKE_CXX_STANDARD 14)
@@ -9,9 +9,9 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/..)
 set(CMAKE_CXX_FLAGS "-Wall -Wextra")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 
-#find_package(Eigen3)
-#include_directories(${EIGEN3_INCLUDE_DIRS})
-include_directories(${EIGEN3_INCLUDE_DIRS} "/home/yimingli/eigen3")
+find_package(Eigen3)
+include_directories(${EIGEN3_INCLUDE_DIRS})
+# include_directories(${EIGEN3_INCLUDE_DIRS} "/DATA3_DB7/data/kncui/miniconda3/include/eigen3")
 # add_subdirectory(pybind11)
 find_package(pybind11)
 pybind11_add_module(mapping mapping.cpp)

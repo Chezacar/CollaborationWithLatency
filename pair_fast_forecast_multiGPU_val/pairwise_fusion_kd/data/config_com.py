@@ -11,7 +11,7 @@ class Config(object):
 		self.only_det = only_det
 		self.code_type = code_type
 		self.loss_type = loss_type #corner_loss faf_loss
-
+		self.forecast = 'MotionNet'
 		# The specifications for BEV maps
 		self.voxel_size = (0.25, 0.25, 0.4)
 		self.area_extents = np.array([[-32., 32.], [-32., 32.], [-3., 2.]])

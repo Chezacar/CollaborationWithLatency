@@ -19,7 +19,7 @@
                 "--mode",
                 "train",
                 "--batch",
-                "1",
+                "2",
                 "--nepoch",
                 "100",
                 "--binary",
@@ -29,7 +29,7 @@
                 // "--resume_teacher",
                 // "/DATA_SSD/slren/teacher_aug_batch_4_epoch_100.pth"
             ],
-            "env": {"CUDA_VISIBLE_DEVICES": "0"}
+            "env": {"CUDA_VISIBLE_DEVICES": "5"}
         }
     ]
 }
