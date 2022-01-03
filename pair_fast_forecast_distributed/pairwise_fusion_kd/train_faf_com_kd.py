@@ -327,6 +327,9 @@ def main(config, config_global, args):
         indices = list(range(n_train))
         data_cache = {}
         for epoch in range(start_epoch, num_epochs + 1):
+            latency_num = (epoch - 100) / 10
+            latency_lambda = [latency_num,  latency_num, latency_num, latency_num, latency_num]
+            print('latency of this epoch is', latency_lambda)
             # trainset.seq_dict[0] = trainset.get_data_dict(trainset.dataset_root_peragent)
             if config.MGDA:
                 lr = fafmodule.optimizer_head.param_groups[0]['lr']
@@ -648,7 +651,7 @@ if __name__ == "__main__":
     parser.add_argument('--rank', default=0, type=int, help='node rank for distributed training')
     parser.add_argument('--ngpus_per_node', default=2, type=int)
     parser.add_argument('--gpu', default=2, type=int, help='GPU id to use.')
-
+    
 
     torch.multiprocessing.set_sharing_strategy('file_system')
 

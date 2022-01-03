@@ -38,3 +38,7 @@ CUDA_VISIBLE_DEVICES=4 python train_faf_com_kd.py --data /GPFS/data/slren/datase
 
 
 CUDA_VISIBLE_DEVICES=4 python train_faf_com_kd.py --mode val --data /GPFS/data/slren/dataset_warp_kd/val --nworker 0 --resume //GPFS/data/zxlei/CollaborativePerception/Forcast/LatencyVersion/pairwise_fast/pairwise_fusion_kd/log/train_single_seq/2021-08-05_19-47-55/epoch_90.pth --layer 3 --logname pairwise_layer3_wf_latency_100epoch --log --logpath /GPFS/data/zxlei/CollaborativePerception/Forcast/LatencyVersion/pairwise_fast/pairwise_fusion_kd/log
+
+CUDA_VISIBLE_DEVICES=0,1 python train_faf_com_kd_distributed.py --mode train --lr 0.001 --data /GPFS/data/zxlei/dataset/test/train --nworker 0 --layer 3 --logname latency5forecast1 --batch 8 --log --latency_lambda 5 5 5 5 5 --forecast_num 3 --logpath /GPFS/data/zxlei/CollaborativePerception/Forcast/LatencyVersion/pair_fast_forecast_distributed/pairwise_fusion_kd/log/motionNet_l5_f3 --world_size 2 --nepoch 200 --log
+
+CUDA_VISIBLE_DEVICES=2,3 python train_faf_com_kd_distributed.py --mode train --lr 0.001 --data /GPFS/data/zxlei/dataset/test/train --nworker 0 --layer 3 --logname latency5forecast1 --batch 8 --log --latency_lambda 10 10 10 10 10 --forecast_num 3 --logpath /GPFS/data/zxlei/CollaborativePerception/Forcast/LatencyVersion/pair_fast_forecast_distributed/pairwise_fusion_kd/log/motionNet_l10_f3 --world_size 2 --nepoch 200 --log

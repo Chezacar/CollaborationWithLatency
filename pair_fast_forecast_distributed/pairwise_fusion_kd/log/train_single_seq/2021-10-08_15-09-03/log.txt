@@ -1,4 +1,0 @@
-command line: train_faf_com_kd_distributed.py --data /GPFS/data/zxlei/dataset/test/train --logpath /GPFS/data/zxlei/CollaborativePerception/Forcast/LatencyVersion/pair_fast_forecast_distributed/pairwise_fusion_kd/log/ --mode train --lr 0.001 --batch 18 --nepoch 100 --world_size 6 --binary 1 --log
-Namespace(batch=18, binary=True, data='/GPFS/data/zxlei/dataset/test/train', forecast_num=4, gpu=2, kd=100000, layer=3, log=True, logname=None, logpath='/GPFS/data/zxlei/CollaborativePerception/Forcast/LatencyVersion/pair_fast_forecast_distributed/pairwise_fusion_kd/log/', lr=0.001, mode='train', model_only=False, nepoch=100, ngpus_per_node=2, nworker=0, only_det=True, rank=0, resume='', resume_teacher='/DATA_SSD/slren/teacher_aug_batch_4_epoch_100.pth', visualization=True, world_size=6)
-
-epoch: 1, lr: 0.001	

@@ -1,73 +1,327 @@
 # Copyright (c) 2020 Mitsubishi Electric Research Laboratories (MERL). All rights reserved. The software, documentation and/or data in this file is provided on an "as is" basis, and MERL has no obligations to provide maintenance, support, updates, enhancements or modifications. MERL specifically disclaims any warranties, including, but not limited to, the implied warranties of merchantability and fitness for any particular purpose. In no event shall MERL be liable to any party for direct, indirect, special, incidental, or consequential damages, including lost profits, arising out of the use of this software and its documentation, even if MERL has been advised of the possibility of such damages. As more fully described in the license agreement that was required in order to download this software, documentation and/or data, permission to use, copy and modify this software without fee is granted, but only for educational, research and non-commercial purposes.
+from multiprocessing import RawArray
+import os
+from os import XATTR_SIZE_MAX
+from warnings import formatwarning
 from numpy.core import shape_base
 import torch.nn.functional as F
 import torch.nn as nn
 import torch
 import ipdb
+import math
+import time
+import numpy as np
+from PIL import Image
+import matplotlib.pyplot as plt
+import seaborn as sns
+from torch.nn.modules import padding
+
+from torch.nn.modules.rnn import LSTMCell
+
+class Predict_Conv(nn.Module):
+    def __init__(self, input_size=256, height_feat_size=64, forecast_num = 3):
+        super(Predict_Conv, self).__init__()
+        self.conv1 = nn.Conv2d(3*height_feat_size, 4*height_feat_size, kernel_size=3, stride=1, padding=1)
+        self.conv2 = nn.Conv2d(4*height_feat_size, 4*height_feat_size, kernel_size=3, stride=1, padding=1)
+        self.conv3 = nn.Conv2d(4*height_feat_size, 2*height_feat_size, kernel_size=3, stride=1, padding=1)
+        self.linear1 = nn.Linear(2*height_feat_size, 1*height_feat_size)
+        self.bn1 = nn.BatchNorm2d(4*height_feat_size)
+        self.bn2 = nn.BatchNorm2d(4*height_feat_size)
+        self.bn3 = nn.BatchNorm2d(2*height_feat_size)
+        self.bn4 = nn.BatchNorm2d(1*height_feat_size)
+    def forward(self, x, m):
+        x_m = torch.cat([x,m.squeeze(0)], 0)
+        x_m = x_m.unsqueeze(0)
+        x_m = F.relu(self.bn1(self.conv1(x_m)))
+        x_m = F.relu(self.bn2(self.conv2(x_m)))
+        x_m = F.relu(self.bn3(self.conv3(x_m)))
+        x_m = F.relu(self.bn4(self.linear1(x_m.permute(0,2,3,1)).permute(0,3,1,2)))
+        return x_m
 
 
-class MotionPrediction(nn.Module):
-    def __init__(self, seq_len = 10):
-        super(MotionPrediction, self).__init__()
-        self.conv1 = nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=1)
-        self.conv2 = nn.Conv2d(32, 2 * seq_len, kernel_size=1, stride=1, padding=0)
+class MotionRNN(nn.Module):
+    def __init__(self, channel_size = 256, motion_category_num=2, height_feat_size=64, forecast_num = 3):
+        super(MotionRNN, self).__init__()
+        self.height_feat_size = height_feat_size
+        self.forecast_num = forecast_num
+        self.ratio = int(math.sqrt(channel_size / height_feat_size))
+        self.channel_size = 256
+        self.motionconv = STPN_MotionNet(height_feat_size = height_feat_size,forecast_num = forecast_num)
+        self.feature_prediction = Predict_Conv(height_feat_size = height_feat_size)
+        self.conv_pre_1 = nn.Conv2d(self.channel_size, self.ratio * self.height_feat_size, kernel_size=3, stride=1, padding=1)
+        self.conv_pre_2 = nn.Conv2d(self.ratio * self.height_feat_size, self.height_feat_size, kernel_size=3, stride=1, padding=1)
+        self.bn_pre_1 = nn.BatchNorm2d(self.ratio * self.height_feat_size)
+        self.bn_pre_2 = nn.BatchNorm2d(self.height_feat_size)
+        self.conv_after_1 = nn.Conv2d(self.height_feat_size, self.ratio * self.height_feat_size, kernel_size=3, stride=1, padding=1)
+        self.conv_after_2 = nn.Conv2d(self.ratio * self.height_feat_size, self.channel_size, kernel_size=3, stride=1, padding=1)
+        self.bn_after_1 = nn.BatchNorm2d(self.ratio * self.height_feat_size)
+        self.bn_after_2 = nn.BatchNorm2d(self.channel_size)
+        # self.feature_prediction = Predict_Conv(height_feat_size = height_feat_size, output_size = height_feat_size)
+    def forward(self, x ,delta_t):
+        device = x.device
+        x = F.relu(self.bn_pre_1(self.conv_pre_1(x)))
+        x = F.relu(self.bn_pre_2(self.conv_pre_2(x)))
+        a,b,c = x[0].shape
+        # input_d = torch.zeros((int(delta_t), 1, self.forecast_num, a, b, c)).to(device)
+        h_d = torch.zeros((int(delta_t) + self.forecast_num,a,b,c)).to(device)
+        h_d[0:self.forecast_num] = x.clone()
+        for i in range(int(delta_t)):
+            # a = h_d[i:i+self.forecast_num]
+            m = self.motionconv(h_d[i:i+self.forecast_num].unsqueeze(0).clone())
+            h_d[i + self.forecast_num] = self.feature_prediction(h_d[i + self.forecast_num - 1].clone(), m)
 
-        self.bn1 = nn.BatchNorm2d(32)
+        h = F.relu(self.bn_after_1(self.conv_after_1(h_d[-1].unsqueeze(0))))
+        h = F.relu(self.bn_after_2(self.conv_after_2(h)))
+        del h_d
+        return h
 
-    def forward(self, x):
-        x = F.relu(self.bn1(self.conv1(x)))
-        x = self.conv2(x)
 
+
+class Motion_Prediction_LSTM(nn.Module):
+    def __init__(self, channel_size = 256, spatial_size = 32, compressed_size = 256, motion_category_num=2, delta_t = 5, forecast_num = 3):
+        super(Motion_Prediction_LSTM, self).__init__()
+        self.ratio = int(math.sqrt(channel_size / compressed_size))
+        self.delta_t = delta_t
+        self.forecast_num = forecast_num
+        self.spatial_size = spatial_size
+        self.compressed_size = compressed_size
+        self.channel_size = channel_size
+        self.conv_pre_1 = nn.Conv2d(self.channel_size, self.ratio * self.compressed_size, kernel_size=3, stride=1, padding=1)
+        self.conv_pre_2 = nn.Conv2d(self.ratio * self.compressed_size, self.compressed_size, kernel_size=3, stride=1, padding=1)
+        self.bn_pre_1 = nn.BatchNorm2d(self.ratio * self.compressed_size)
+        self.bn_pre_2 = nn.BatchNorm2d(self.compressed_size)
+        # self.conv_pre_3 = nn.Conv2d(16, self.compressed_size, kernel_size=3, stride=1, padding=1)
+        self.conv_after_1 = nn.Conv2d(self.compressed_size, self.ratio * self.compressed_size, kernel_size=3, stride=1, padding=1)
+        self.conv_after_2 = nn.Conv2d(self.ratio * self.compressed_size, self.channel_size, kernel_size=3, stride=1, padding=1)
+        self.bn_after_1 = nn.BatchNorm2d(self.ratio * self.compressed_size)
+        self.bn_after_2 = nn.BatchNorm2d(self.channel_size)
+        self.lstmcell = MotionLSTM(32, self.compressed_size)
+        self.time_weight = ModulatedTime(input_channel = 512)
+
+        
+    def forward(self, x, delta_t):
+        self.delta_t = delta_t
+        # Cell Classification head
+        # x_shape = [self.forecast_num _32 _32_256]
+        # x = F.relu(self.bn_pre_1(self.conv_pre_1(x)))
+        # x = F.relu(self.bn_pre_2(self.conv_pre_2(x)))
+        h = x[-1]
+        c = torch.zeros((x[0].shape)).to(x.device)
+        
+        for i in range(self.forecast_num):
+            h,c = self.lstmcell(x[i], (h,c))
+        # cell_class_pred = self.cell_classify(stpn_out)
+        for t in range(int(self.delta_t)):
+            h,c = self.lstmcell(h, (h,c))
+        # Motion State Classification head
+        # state_class_pred = self.state_classify(stpn_out)
+        w = self.time_weight(torch.cat([x[-1].unsqueeze(0), h],1), delta_t)
+        w = 0.1 * int(delta_t - 1) * w
+        w = torch.tanh(w)
+        x = w * h + (1-w) * x[-1]
+        # x = h
+        # x = F.relu(self.bn_after_1(self.conv_after_1(x)))
+        # x = F.relu(self.bn_after_2(self.conv_after_2(x)))
+        # Motion Displacement prediction
+        # disp = self.motion_pred(stpn_out)
+        # disp = disp.view(-1, 2, stpn_out.size(-2), stpn_out.size(-1))
+
+        # return disp, cell_class_pred, state_class_pred
         return x
 
+class MotionLSTM(nn.Module):
+    def __init__(self, spatial_size, input_channel_size, hidden_size = 0):
+        super().__init__()
+        self.input_channel_size = input_channel_size  # channel size
+        self.hidden_size = hidden_size
+        self.spatial_size = spatial_size
 
-class MotionNet(nn.Module):
-    def __init__(self, out_seq_len=20, motion_category_num=2, height_feat_size=13):
-        super(MotionNet, self).__init__()
-        self.out_seq_len = out_seq_len
+        #i_t 
+        # self.U_i = nn.Parameter(torch.Tensor(input_channel_size, hidden_size)) 
+        # self.V_i = nn.Parameter(torch.Tensor(hidden_size, hidden_size)) 
+        
+        self.U_i = STPN_MotionLSTM(height_feat_size = self.input_channel_size)
+        self.V_i = STPN_MotionLSTM(height_feat_size = self.input_channel_size)
+        self.b_i = nn.Parameter(torch.Tensor(1, self.input_channel_size, self.spatial_size, self.spatial_size))
+        
+        # #f_t 
+        # self.U_f = nn.Parameter(torch.Tensor(input_channel_size, hidden_size)) 
+        # self.V_f = nn.Parameter(torch.Tensor(hidden_size, hidden_size)) 
+        # self.b_f = nn.Parameter(torch.Tensor(hidden_size)) 
+        self.U_f = STPN_MotionLSTM(height_feat_size = self.input_channel_size)
+        self.V_f = STPN_MotionLSTM(height_feat_size = self.input_channel_size)
+        self.b_f = nn.Parameter(torch.Tensor(1, self.input_channel_size, self.spatial_size, self.spatial_size))
 
-        # self.cell_classify = CellClassification()
-        self.motion_pred = MotionPrediction(seq_len=self.out_seq_len)
-        # self.state_classify = StateEstimation(motion_category_num=motion_category_num)
-        self.stpn = STPN(height_feat_size=height_feat_size)
+        # #c_t 
+        # self.U_c = nn.Parameter(torch.Tensor(input_channel_size, hidden_size)) 
+        # self.V_c = nn.Parameter(torch.Tensor(hidden_size, hidden_size)) 
+        # self.b_c = nn.Parameter(torch.Tensor(hidden_size)) 
+        self.U_c = STPN_MotionLSTM(height_feat_size = self.input_channel_size)
+        self.V_c = STPN_MotionLSTM(height_feat_size = self.input_channel_size)
+        self.b_c = nn.Parameter(torch.Tensor(1, self.input_channel_size, self.spatial_size, self.spatial_size))
+
+        # #o_t 
+        # self.U_o = nn.Parameter(torch.Tensor(input_channel_size, hidden_size)) 
+        # self.V_o = nn.Parameter(torch.Tensor(hidden_size, hidden_size)) 
+        # self.b_o = nn.Parameter(torch.Tensor(hidden_size)) 
+        self.U_o = STPN_MotionLSTM(height_feat_size = self.input_channel_size)
+        self.V_o = STPN_MotionLSTM(height_feat_size = self.input_channel_size)
+        self.b_o = nn.Parameter(torch.Tensor(1, self.input_channel_size, self.spatial_size, self.spatial_size))
+
+        # self.init_weights()
+
+    # def init_weights(self):
+    #     stdv = 1.0 / math.sqrt(self.hidden_size)
+    #     for weight in self.parameters():
+    #         weight.data.uniform_(-stdv, stdv)
+
+    def forward(self,x,init_states=None): 
+        """ 
+        assumes x.shape represents (batch_size, sequence_size, input_channel_size) 
+        """ 
+        h, c = init_states 
+        i = torch.sigmoid(self.U_i(x) + self.V_i(h) + self.b_i) 
+        f = torch.sigmoid(self.U_f(x) + self.V_f(h) + self.b_f) 
+        g = torch.tanh(self.U_c(x) + self.V_c(h) + self.b_c) 
+        o = torch.sigmoid(self.U_o(x) + self.V_o(x) + self.b_o) 
+        c_out = f * c + i * g 
+        h_out = o *  torch.tanh(c_out) 
+
+        # hidden_seq.append(h_t.unsqueeze(0)) 
+
+        # #reshape hidden_seq p/ retornar 
+        # hidden_seq = torch.cat(hidden_seq, dim=0) 
+        # hidden_seq = hidden_seq.transpose(0, 1).contiguous() 
+        return (h_out, c_out)
+
+class STPN_MotionLSTM(nn.Module):
+    def __init__(self, height_feat_size = 16):
+        super(STPN_MotionLSTM, self).__init__()
 
 
-    def forward(self, bevs,delta_t):
-        bevs = bevs.permute(0, 1, 4, 2, 3)  # (Batch, seq, z, h, w)
 
-        # Backbone network
-        x = self.stpn(bevs)
+        # self.conv3d_1 = Conv3D(4, 8, kernel_size=(3, 1, 1), stride=1, padding=(0, 0, 0))
+        # self.conv3d_2 = Conv3D(8, 8, kernel_size=(1, 1, 1), stride=1, padding=(0, 0, 0))
+        # self.conv3d_1 = Conv3D(64, 64, kernel_size=(1, 1, 1), stride=1, padding=(0, 0, 0))
+        # self.conv3d_2 = Conv3D(128, 128, kernel_size=(1, 1, 1), stride=1, padding=(0, 0, 0))
 
-        # # Cell Classification head
-        # cell_class_pred = self.cell_classify(x)
+        self.conv1_1 = nn.Conv2d(height_feat_size, 2*height_feat_size, kernel_size=3, stride=2, padding=1)
+        self.conv1_2 = nn.Conv2d(2*height_feat_size, 2*height_feat_size, kernel_size=3, stride=1, padding=1)
 
-        # # Motion State Classification head
-        # state_class_pred = self.state_classify(x)
+        self.conv2_1 = nn.Conv2d(2*height_feat_size, 4*height_feat_size, kernel_size=3, stride=2, padding=1)
+        self.conv2_2 = nn.Conv2d(4*height_feat_size, 4*height_feat_size, kernel_size=3, stride=1, padding=1)
 
-        # Motion Displacement prediction
-        disp = self.motion_pred(x)
-        disp = disp.view(-1, 2, x.size(-2), x.size(-1))
+        self.conv7_1 = nn.Conv2d(6*height_feat_size, 2*height_feat_size, kernel_size=3, stride=1, padding=1)
+        self.conv7_2 = nn.Conv2d(2*height_feat_size, 2*height_feat_size, kernel_size=3, stride=1, padding=1)
 
-        return disp
+        self.conv8_1 = nn.Conv2d(3*height_feat_size , height_feat_size, kernel_size=3, stride=1, padding=1)
+        self.conv8_2 = nn.Conv2d(height_feat_size, height_feat_size, kernel_size=3, stride=1, padding=1)
+
+        self.bn1_1 = nn.BatchNorm2d(2*height_feat_size)
+        self.bn1_2 = nn.BatchNorm2d(2*height_feat_size)
+
+        self.bn2_1 = nn.BatchNorm2d(4*height_feat_size)
+        self.bn2_2 = nn.BatchNorm2d(4*height_feat_size)
+
+        self.bn7_1 = nn.BatchNorm2d(2*height_feat_size)
+        self.bn7_2 = nn.BatchNorm2d(2*height_feat_size)
+
+        self.bn8_1 = nn.BatchNorm2d(1*height_feat_size)
+        self.bn8_2 = nn.BatchNorm2d(1*height_feat_size)
+
+    def forward(self, x):
+        # z, h, w = x.size()
+        batch = 1
+        # bathc 4 32 32 
+        x = x.view(-1, x.size(-3), x.size(-2), x.size(-1))
+        # -------------------------------- Encoder Path --------------------------------
+        # -- STC block 1
+        x_1 = F.relu(self.bn1_1(self.conv1_1(x)))
+        x_1 = F.relu(self.bn1_2(self.conv1_2(x_1)))
+
+        x_1 = x_1.view(batch, -1, x_1.size(1), x_1.size(2), x_1.size(3)).contiguous()  # (batch, seq, c, h, w)
+        # x_1 = self.conv3d_1(x_1)
+        x_1 = x_1.view(-1, x_1.size(2), x_1.size(3), x_1.size(4)).contiguous()  # (batch * seq, c, h, w)
+
+        # -- STC block 2
+        x_2 = F.relu(self.bn2_1(self.conv2_1(x_1)))
+        x_2 = F.relu(self.bn2_2(self.conv2_2(x_2)))
+
+        x_2 = x_2.view(batch, -1, x_2.size(1), x_2.size(2), x_2.size(3)).contiguous()  # (batch, seq, c, h, w)
+        # x_2 = self.conv3d_2(x_2)
+        x_2 = x_2.view(-1, x_2.size(2), x_2.size(3), x_2.size(4)).contiguous()  # (batch * seq, c, h, w), seq = 1
+
+        # -- STC block 3
+        # x_3 = F.relu(self.bn3_1(self.conv3_1(x_2)))
+        # x_3 = F.relu(self.bn3_2(self.conv3_2(x_3)))
+
+
+        # -- STC block 4
+        # x_4 = F.relu(self.bn4_1(self.conv4_1(x_3)))
+        # x_4 = F.relu(self.bn4_2(self.conv4_2(x_4)))
+        # x_4 = x_4.view(batch, -1, x_4.size(1), x_4.size(2), x_4.size(3))
+        # x_4 = x_4.permute(0, 2, 1, 3, 4).contiguous()
+        # x_4 = F.adaptive_max_pool3d(x_4, (1, None, None))
+        # x_4 = x_4.permute(0, 2, 1, 3, 4).contiguous()
+        # x_4 = x_4.view(-1, x_4.size(2), x_4.size(3), x_4.size(4)).contiguous()
+
+        # -------------------------------- Decoder Path --------------------------------
+        # x_3 = x_3.view(batch, -1, x_3.size(1), x_3.size(2), x_3.size(3))
+        # x_3 = x_3.permute(0, 2, 1, 3, 4).contiguous()
+        # x_3 = F.adaptive_max_pool3d(x_3, (1, None, None))
+        # x_3 = x_3.permute(0, 2, 1, 3, 4).contiguous()
+        # x_3 = x_3.view(-1, x_3.size(2), x_3.size(3), x_3.size(4)).contiguous()
+        # x_5 = F.relu(self.bn5_1(self.conv5_1(torch.cat((F.interpolate(x_4, scale_factor=(2, 2)), x_3), dim=1))))
+        # x_5 = F.relu(self.bn5_2(self.conv5_2(x_5)))
+
+        x_2 = x_2.view(batch, -1, x_2.size(1), x_2.size(2), x_2.size(3))
+        x_2 = x_2.permute(0, 2, 1, 3, 4).contiguous()
+        x_2 = F.adaptive_max_pool3d(x_2, (1, None, None))
+        x_2 = x_2.permute(0, 2, 1, 3, 4).contiguous()
+        x_2 = x_2.view(-1, x_2.size(2), x_2.size(3), x_2.size(4)).contiguous()
+
+        # x_6 = F.relu(self.bn6_1(self.conv6_1(torch.cat((F.interpolate(x_5, scale_factor=(2, 2)), x_2), dim=1))))
+        # x_6 = F.relu(self.bn6_2(self.conv6_2(x_6)))
+
+        x_1 = x_1.view(batch, -1, x_1.size(1), x_1.size(2), x_1.size(3))
+        x_1 = x_1.permute(0, 2, 1, 3, 4).contiguous()
+        x_1 = F.adaptive_max_pool3d(x_1, (1, None, None))
+        x_1 = x_1.permute(0, 2, 1, 3, 4).contiguous()
+        x_1 = x_1.view(-1, x_1.size(2), x_1.size(3), x_1.size(4)).contiguous()
+
+        x_7 = F.relu(self.bn7_1(self.conv7_1(torch.cat((F.interpolate(x_2, scale_factor=(2, 2)), x_1), dim=1))))
+        x_7 = F.relu(self.bn7_2(self.conv7_2(x_7)))
+
+        x = x.view(batch, -1, x.size(1), x.size(2), x.size(3))
+        x = x.permute(0, 2, 1, 3, 4).contiguous()
+        x = F.adaptive_max_pool3d(x, (1, None, None))
+        x = x.permute(0, 2, 1, 3, 4).contiguous()
+        x = x.view(-1, x.size(2), x.size(3), x.size(4)).contiguous()
+
+        x_8 = F.relu(self.bn8_1(self.conv8_1(torch.cat((F.interpolate(x_7, scale_factor=(2, 2)), x), dim=1))))
+        res_x = F.relu(self.bn8_2(self.conv8_2(x_8)))
+
+        return res_x
+
 
 class forecast_lstm(nn.Module):
     def __init__(self):
         super(forecast_lstm, self).__init__()
-        self.embedding_dim = 4096
-        self.hidden_size = 4096
+        self.embedding_dim = 8192
+        self.hidden_size = 8192
         # self.proj_size = 32768
-        self.lstm_layer = nn.LSTMCell(input_size=self.embedding_dim,hidden_size=self.hidden_size)
+        self.lstm_layer = nn.LSTMCell(input_channel_size=self.embedding_dim,hidden_size=self.hidden_size)
         # self.conv3d_1 = nn.Conv3D(64, 64, kernel_size=(3, 3, 3), stride=1, padding=(0, 0, 0))
         # self.conv3d_2 = nn.Conv3D(128, 128, kernel_size=(3, 3, 3), stride=1, padding=(0, 0, 0))
         self.linear_1 = nn.Linear(256, 32)
-        self.linear_2 = nn.Linear(32,4)
-        self.linear_3 = nn.Linear(4, 32)
+        self.linear_2 = nn.Linear(32,8)
+        self.linear_3 = nn.Linear(8, 32)
         self.linear_4 = nn.Linear(32,256)
         # self.linear_5 = nn.Linear(4,16)
         # self.linear_6 = nn.Linear(16,4)
         
-    def forward(self, x, delta_t):
-        x = x.permute(0, 2, 3, 1)
+    def forward(self, x_raw, delta_t):
+        x = x_raw.permute(0, 2, 3, 1)
         x = self.linear_1(x)
         x = F.relu(x)
         x = self.linear_2(x)
@@ -92,7 +346,7 @@ class forecast_lstm(nn.Module):
             x_temp = c_temp
             (h_temp, c_temp) = self.lstm_layer(x_temp, (h_temp, c_temp))
         x = h_temp
-        x = x.reshape(32,32,4)
+        x = x.reshape(32,32,8)
         # x = self.linear_5(x)
         # x = F.relu(x)
         x = self.linear_3(x)
@@ -131,21 +385,119 @@ class StateEstimation(nn.Module):
 
         return x
 
+class CatTime(nn.Module):
+    def __init__(self):
+        super(CatTime, self).__init__()
+        self.linear1 = nn.Linear(1,32)
+        self.linear2 = nn.Linear(32,1024)
+        self.conv1 = nn.Conv2d(1, 8, kernel_size=3, stride=1, padding=1)
+        self.conv2 = nn.Conv2d(8, 32, kernel_size=3, stride=1, padding=1)
+        self.conv3 = nn.Conv2d(32, 128, kernel_size=1, stride=1, padding=0)
+        self.conv4 = nn.Conv2d(256, 128, kernel_size=3, stride=1, padding=1)
+        # self.bn1 = nn.BatchNorm2d(512)
+
+    def forward(self, x, delta_t):
+        count = 0
+        a, b, c, d = x.size()
+        x_te = torch.ones(a,1,c,d).to(x.device)
+        x_t = torch.ones(x.size())
+        for i in range(len(delta_t)):
+            for j in range(len(delta_t[0])):
+                if delta_t[i][j] != 0:
+                    t = delta_t[i][j] * torch.ones((1,1)).to(x.device)
+                    # print(t[0])
+                    t = F.relu(self.linear1(t))
+                    t = F.relu(self.linear2(t))
+                    t = t.reshape(32,32)
+                    x_te[count][0] = t
+                    # t = F.relu(self.conv1(t))
+                    # t = F.relu(self.conv2(t))
+                    # t = F.relu(self.conv3(t))
+        x_te = F.relu(self.conv1(x_te))
+        x_te = F.relu(self.conv2(x_te))
+        x_te = F.relu(self.conv3(x_te))
+        x = F.relu(self.conv4(x))
+        x_t = torch.cat((x,x_te),dim = 1)
+
+        return x_t
+
+
+
+# class CatTime(nn.Module):
+#     def __init__(self):
+#         super(CatTime, self).__init__()
+#         # self.conv1 = nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=1)
+#         # self.conv2 = nn.Conv2d(32, 2 * seq_len, kernel_size=1, stride=1, padding=0)
+
+#         # self.bn1 = nn.BatchNorm2d(512)
+
+#     def forward(self, x, delta_t):
+#         a,b,c,d = x.size()
+#         y = torch.ones((a,1,c,d)).to(x.device)
+#         count = 0
+#         for i in range(len(delta_t)):
+#             for j in range(len(delta_t[0])):
+#                 if delta_t[i][j] != 0:
+#                     y[count] = delta_t[i][j] * y[count]
+#                     count += 1
+#         x = torch.cat((x,y),dim = 1)
+
+#         return x
+
+class ModulatedTime(nn.Module):
+    def __init__(self, input_channel = 128):
+        super(ModulatedTime, self).__init__()
+        self.input_channel = input_channel
+        self.conv1_channel = int(self.input_channel / 2)
+        self.conv2_channel = int(self.conv1_channel / 2)
+        # self.ratio = math.sqrt()
+        self.conv1 = nn.Conv2d(self.input_channel, self.conv1_channel, kernel_size=3, stride=1, padding=1)
+        self.conv2 = nn.Conv2d(self.conv1_channel, self.conv2_channel, kernel_size=3, stride=1, padding=1)
+        self.convl1 = nn.Conv2d(1, 8, kernel_size=3, stride=1, padding=1)
+        self.convl2 = nn.Conv2d(8,self.conv2_channel, kernel_size=3, stride=1, padding=1)
+        self.conv3 = nn.Conv2d(int(2 * self.conv2_channel), 8, kernel_size = 3, stride=1, padding = 1) 
+        # self.linear3 = nn.Linear(16,8)
+        self.convl4 = nn.Conv2d(8, 1, kernel_size=3, stride=1, padding=1)
+        # self.bnl1 = nn.BatchNorm2d(8)
+        # self.bnl2 = nn.BatchNorm2d(self.conv2_channel)
+        # self.bnc1 = nn.BatchNorm2d(self.conv1_channel)
+        # self.bnc2 = nn.BatchNorm2d(self.conv2_channel)
+        # self.bnc3 = nn.BatchNorm2d(8)
+        # self.bn4 = nn.BatchNorm2d(1)
+    def forward(self, x, delta_t):
+        a,b,c,d = x.size()
+        y = torch.ones((1,1,c,d)).to(x.device)
+        t_y = F.relu(self.convl1(y))
+        t_y = F.relu(self.convl2(t_y))
+        t_x = F.relu(self.conv1(x))
+        t_x = F.relu(self.conv2(t_x))
+        t_xy = torch.cat([t_x, t_y], 1)
+        t_xy = F.relu(self.conv3(t_xy))
+        # t_y = F.relu(self.bn3(self.linear3(y)))
+        t_xy = torch.sigmoid(self.convl4(t_xy))
+        return t_xy
 
 class MotionPrediction(nn.Module):
-    def __init__(self, seq_len):
+    def __init__(self, seq_len = 256, forecast_num = 1):
         super(MotionPrediction, self).__init__()
-        self.conv1 = nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=1)
-        self.conv2 = nn.Conv2d(32, 2 * seq_len, kernel_size=1, stride=1, padding=0)
-
-        self.bn1 = nn.BatchNorm2d(32)
+        self.conv1 = nn.Conv2d(256, 512, kernel_size=3, stride=1, padding=1)
+        self.conv2 = nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=1)
+        # self.conv3 = nn.Conv2d(512, seq_len, kernel_size=3, stride=1, padding=1)
+        self.linear1 = nn.Linear(512,seq_len)
+        self.bn1 = nn.BatchNorm2d(512)
+        self.bn2 = nn.BatchNorm2d(512)
+        self.bn3 = nn.BatchNorm2d(seq_len)
 
     def forward(self, x):
         x = F.relu(self.bn1(self.conv1(x)))
-        x = self.conv2(x)
+        x = F.relu(self.bn2(self.conv2(x)))
+        x = x.permute(0,2,3,1)
+        x = self.linear1(x)
+        x = x.permute(0,3,1,2)
+        x = F.relu(self.bn3(x))
+        # x = self.conv2(x)
 
         return x
-
 
 class Conv3D(nn.Module):
     def __init__(self, in_channel, out_channel, kernel_size, stride, padding):
@@ -384,6 +736,143 @@ class STPN(nn.Module):
 
         return res_x
 
+class STPN_MotionNet(nn.Module):
+    def __init__(self, height_feat_size=256, forecast_num=3):
+        super(STPN_MotionNet, self).__init__()
+        self.conv_pre_1 = nn.Conv2d(height_feat_size, height_feat_size * 2, kernel_size=3, stride=1, padding=1)
+        self.conv_pre_2 = nn.Conv2d(height_feat_size * 2, height_feat_size * 2, kernel_size=3, stride=1, padding=1)
+        self.bn_pre_1 = nn.BatchNorm2d(height_feat_size * 2)
+        self.bn_pre_2 = nn.BatchNorm2d(height_feat_size * 2)
+
+        self.conv3d_1 = Conv3D(height_feat_size * 4, height_feat_size * 4, kernel_size=(forecast_num, 1, 1), stride=1, padding=(0, 0, 0))
+        self.conv3d_2 = Conv3D(height_feat_size * 8, height_feat_size * 8, kernel_size=(1, 1, 1), stride=1, padding=(0, 0, 0))
+        # self.conv3d_1 = Conv3D(64, 64, kernel_size=(1, 1, 1), stride=1, padding=(0, 0, 0))
+        # self.conv3d_2 = Conv3D(128, 128, kernel_size=(1, 1, 1), stride=1, padding=(0, 0, 0))
+
+        self.conv1_1 = nn.Conv2d(height_feat_size * 2, height_feat_size * 4, kernel_size=3, stride=2, padding=1)
+        self.conv1_2 = nn.Conv2d(height_feat_size * 4, height_feat_size * 4, kernel_size=3, stride=1, padding=1)
+
+        self.conv2_1 = nn.Conv2d(height_feat_size * 4, height_feat_size * 8, kernel_size=3, stride=2, padding=1)
+        self.conv2_2 = nn.Conv2d(height_feat_size * 8, height_feat_size * 8, kernel_size=3, stride=1, padding=1)
+
+        self.conv3_1 = nn.Conv2d(int(height_feat_size / 2), height_feat_size * 1, kernel_size=3, stride=2, padding=1)
+        self.conv3_2 = nn.Conv2d(height_feat_size * 1, height_feat_size * 1, kernel_size=3, stride=1, padding=1)
+
+        self.conv4_1 = nn.Conv2d(height_feat_size * 1, height_feat_size * 2, kernel_size=3, stride=2, padding=1)
+        self.conv4_2 = nn.Conv2d(height_feat_size * 2, height_feat_size * 2, kernel_size=3, stride=1, padding=1)
+
+        self.conv5_1 = nn.Conv2d(height_feat_size * 3, height_feat_size * 1, kernel_size=3, stride=1, padding=1)
+        self.conv5_2 = nn.Conv2d(height_feat_size * 1, height_feat_size * 1, kernel_size=3, stride=1, padding=1)
+
+        self.conv6_1 = nn.Conv2d(int(height_feat_size * 3 / 2), int(height_feat_size / 2), kernel_size=3, stride=1, padding=1)
+        self.conv6_2 = nn.Conv2d(int(height_feat_size / 2), int(height_feat_size / 2), kernel_size=3, stride=1, padding=1)
+
+        self.conv7_1 = nn.Conv2d(height_feat_size * 12, height_feat_size * 4, kernel_size=3, stride=1, padding=1)
+        self.conv7_2 = nn.Conv2d(height_feat_size * 4, height_feat_size * 4, kernel_size=3, stride=1, padding=1)
+
+        self.conv8_1 = nn.Conv2d(height_feat_size * 6, height_feat_size * 2, kernel_size=3, stride=1, padding=1)
+        self.conv8_2 = nn.Conv2d(height_feat_size * 2, height_feat_size , kernel_size=3, stride=1, padding=1)
+
+        self.bn1_1 = nn.BatchNorm2d(height_feat_size * 4)
+        self.bn1_2 = nn.BatchNorm2d(height_feat_size * 4)
+
+        self.bn2_1 = nn.BatchNorm2d(height_feat_size * 8)
+        self.bn2_2 = nn.BatchNorm2d(height_feat_size * 8)
+
+        self.bn3_1 = nn.BatchNorm2d(height_feat_size * 1)
+        self.bn3_2 = nn.BatchNorm2d(height_feat_size * 1)
+
+        self.bn4_1 = nn.BatchNorm2d(height_feat_size * 2)
+        self.bn4_2 = nn.BatchNorm2d(height_feat_size * 2)
+
+        self.bn5_1 = nn.BatchNorm2d(height_feat_size * 1)
+        self.bn5_2 = nn.BatchNorm2d(height_feat_size * 1)
+
+        self.bn6_1 = nn.BatchNorm2d(int(height_feat_size / 2))
+        self.bn6_2 = nn.BatchNorm2d(int(height_feat_size / 2))
+
+        self.bn7_1 = nn.BatchNorm2d(height_feat_size * 4)
+        self.bn7_2 = nn.BatchNorm2d(height_feat_size * 4)
+
+        self.bn8_1 = nn.BatchNorm2d(height_feat_size * 2)
+        self.bn8_2 = nn.BatchNorm2d(height_feat_size)
+
+    def forward(self, x):
+        batch, seq, z, h, w = x.size()
+
+        x = x.view(-1, x.size(-3), x.size(-2), x.size(-1))
+        x = F.relu(self.bn_pre_1(self.conv_pre_1(x)))
+        x = F.relu(self.bn_pre_2(self.conv_pre_2(x)))
+
+        # -------------------------------- Encoder Path --------------------------------
+        # -- STC block 1
+        x_1 = F.relu(self.bn1_1(self.conv1_1(x)))
+        x_1 = F.relu(self.bn1_2(self.conv1_2(x_1)))
+
+        x_1 = x_1.view(batch, -1, x_1.size(1), x_1.size(2), x_1.size(3)).contiguous()  # (batch, seq, c, h, w)
+        x_1 = self.conv3d_1(x_1)
+        x_1 = x_1.view(-1, x_1.size(2), x_1.size(3), x_1.size(4)).contiguous()  # (batch * seq, c, h, w)
+
+        # -- STC block 2
+        x_2 = F.relu(self.bn2_1(self.conv2_1(x_1)))
+        x_2 = F.relu(self.bn2_2(self.conv2_2(x_2)))
+
+        x_2 = x_2.view(batch, -1, x_2.size(1), x_2.size(2), x_2.size(3)).contiguous()  # (batch, seq, c, h, w)
+        x_2 = self.conv3d_2(x_2)
+        x_2 = x_2.view(-1, x_2.size(2), x_2.size(3), x_2.size(4)).contiguous()  # (batch * seq, c, h, w), seq = 1
+
+        # -- STC block 3
+        # x_3 = F.relu(self.bn3_1(self.conv3_1(x_2)))
+        # x_3 = F.relu(self.bn3_2(self.conv3_2(x_3)))
+
+
+        # -- STC block 4
+        # x_4 = F.relu(self.bn4_1(self.conv4_1(x_3)))
+        # x_4 = F.relu(self.bn4_2(self.conv4_2(x_4)))
+        # x_4 = x_4.view(batch, -1, x_4.size(1), x_4.size(2), x_4.size(3))
+        # x_4 = x_4.permute(0, 2, 1, 3, 4).contiguous()
+        # x_4 = F.adaptive_max_pool3d(x_4, (1, None, None))
+        # x_4 = x_4.permute(0, 2, 1, 3, 4).contiguous()
+        # x_4 = x_4.view(-1, x_4.size(2), x_4.size(3), x_4.size(4)).contiguous()
+
+        # -------------------------------- Decoder Path --------------------------------
+        # x_3 = x_3.view(batch, -1, x_3.size(1), x_3.size(2), x_3.size(3))
+        # x_3 = x_3.permute(0, 2, 1, 3, 4).contiguous()
+        # x_3 = F.adaptive_max_pool3d(x_3, (1, None, None))
+        # x_3 = x_3.permute(0, 2, 1, 3, 4).contiguous()
+        # x_3 = x_3.view(-1, x_3.size(2), x_3.size(3), x_3.size(4)).contiguous()
+        # x_5 = F.relu(self.bn5_1(self.conv5_1(torch.cat((F.interpolate(x_4, scale_factor=(2, 2)), x_3), dim=1))))
+        # x_5 = F.relu(self.bn5_2(self.conv5_2(x_5)))
+
+        x_2 = x_2.view(batch, -1, x_2.size(1), x_2.size(2), x_2.size(3))
+        x_2 = x_2.permute(0, 2, 1, 3, 4).contiguous()
+        x_2 = F.adaptive_max_pool3d(x_2, (1, None, None))
+        x_2 = x_2.permute(0, 2, 1, 3, 4).contiguous()
+        x_2 = x_2.view(-1, x_2.size(2), x_2.size(3), x_2.size(4)).contiguous()
+
+        # x_6 = F.relu(self.bn6_1(self.conv6_1(torch.cat((F.interpolate(x_5, scale_factor=(2, 2)), x_2), dim=1))))
+        # x_6 = F.relu(self.bn6_2(self.conv6_2(x_6)))
+
+        x_1 = x_1.view(batch, -1, x_1.size(1), x_1.size(2), x_1.size(3))
+        x_1 = x_1.permute(0, 2, 1, 3, 4).contiguous()
+        x_1 = F.adaptive_max_pool3d(x_1, (1, None, None))
+        x_1 = x_1.permute(0, 2, 1, 3, 4).contiguous()
+        x_1 = x_1.view(-1, x_1.size(2), x_1.size(3), x_1.size(4)).contiguous()
+
+        x_7 = F.relu(self.bn7_1(self.conv7_1(torch.cat((F.interpolate(x_2, scale_factor=(2, 2)), x_1), dim=1))))
+        x_7 = F.relu(self.bn7_2(self.conv7_2(x_7)))
+
+        x = x.view(batch, -1, x.size(1), x.size(2), x.size(3))
+        x = x.permute(0, 2, 1, 3, 4).contiguous()
+        x = F.adaptive_max_pool3d(x, (1, None, None))
+        x = x.permute(0, 2, 1, 3, 4).contiguous()
+        x = x.view(-1, x.size(2), x.size(3), x.size(4)).contiguous()
+
+        x_8 = F.relu(self.bn8_1(self.conv8_1(torch.cat((F.interpolate(x_7, scale_factor=(2, 2)), x), dim=1))))
+        res_x = F.relu(self.bn8_2(self.conv8_2(x_8)))
+
+        return res_x
+
 class STPN_KD(nn.Module):
     def __init__(self, height_feat_size=13):
         super(STPN_KD, self).__init__()
@@ -513,34 +1002,37 @@ class STPN_KD(nn.Module):
 
 
 class MotionNet(nn.Module):
-    def __init__(self, out_seq_len=20, motion_category_num=2, height_feat_size=13):
+    def __init__(self, out_seq_len=256, motion_category_num=2, height_feat_size=256, forecast_num = 3):
         super(MotionNet, self).__init__()
         self.out_seq_len = out_seq_len
-
+        self.forecast_num = forecast_num
         self.cell_classify = CellClassification()
         self.motion_pred = MotionPrediction(seq_len=self.out_seq_len)
         self.state_classify = StateEstimation(motion_category_num=motion_category_num)
-        self.stpn = STPN(height_feat_size=height_feat_size)
+        self.stpn = STPN_MotionNet(height_feat_size=height_feat_size,forecast_num = forecast_num)
+        self.cattime = CatTime()
+        # self.cattime = ModulatedTime( )
 
-
-    def forward(self, bevs):
-        bevs = bevs.permute(0, 1, 4, 2, 3)  # (Batch, seq, z, h, w)
+    def forward(self, bevs, delta_t):
+        # bevs = bevs.permute(0, 1, 2, 3, 4)  # (Batch, seq, z, h, w)
+        
 
         # Backbone network
         x = self.stpn(bevs)
 
         # Cell Classification head
-        cell_class_pred = self.cell_classify(x)
+        # cell_class_pred = self.cell_classify(x)
 
         # Motion State Classification head
-        state_class_pred = self.state_classify(x)
+        # state_class_pred = self.state_classify(x)
 
         # Motion Displacement prediction
+        x = self.cattime(x,delta_t)
         disp = self.motion_pred(x)
-        disp = disp.view(-1, 2, x.size(-2), x.size(-1))
+        # disp = disp.view(-1, 2, x.size(-2), x.size(-1))
 
-        return disp, cell_class_pred, state_class_pred
-
+        # return disp, cell_class_pred, state_class_pred
+        return disp
 
 # For MGDA loss computation
 class FeatEncoder(nn.Module):
@@ -874,7 +1366,7 @@ class lidar_decoder(nn.Module):
         x_8 = F.relu(self.bn8_1(self.conv8_1(torch.cat((F.interpolate(x_7, scale_factor=(2, 2)), x), dim=1))))
         res_x = F.relu(self.bn8_2(self.conv8_2(x_8)))
 
-        return res_x
+        return res_x, x_5, x_6, x_7, x_8
 
 class lidar_decoder_kd(nn.Module):
     def __init__(self, height_feat_size=13):
@@ -1153,11 +1645,11 @@ class pairfusionlayer_2(nn.Module):
         self.bn1_4 = nn.BatchNorm2d(1)
 
 
-    def forward(self,x):
+    def forward(self, x, scene):
 
         _,c,h,w = x.size()
         num_agent = x.size()[0]
-        
+        [scene, delta_t, forecast_model] = scene
         cat_list=[]
         for i in range(num_agent):
             
@@ -1175,6 +1667,31 @@ class pairfusionlayer_2(nn.Module):
 
 
         fusion_weight = F.softmax(fusion_weight,dim=0).cuda()
+        if 0:
+            weight_save = fusion_weight.to('cpu')
+            weight_save = np.array(weight_save)
+            time_save = time.localtime(time.time())
+            scene_id = scene[0].split('/')[-1].split('_')[0]
+            scene_time = scene[0].split('/')[-1].split('_')[-1]
+            path_save = './visualization/colla_weight/' 
+            if not os.path.exists(path_save):
+                os.mkdir(path_save)           
+            path_save = path_save + str(time_save.tm_mon) + str(time_save.tm_mday) + '_' + forecast_model + '_' + str(int(delta_t[0][1])) + '/'
+            if not os.path.exists(path_save):
+                os.mkdir(path_save)     
+            path_save = path_save + scene_id + '/'
+            if not os.path.exists(path_save):
+                os.mkdir(path_save)    
+            path_save = path_save + scene_time + '/'
+            if not os.path.exists(path_save):
+                os.mkdir(path_save)    
+            ref = weight_save[0].max()
+            for i in range(weight_save.shape[0]):
+                weight_pic = weight_save[i][0] / ref
+                pic = sns.heatmap(data = weight_pic, vmax = 1, vmin = 0, linewidths=.5, cmap="YlGnBu")
+                pic_save = pic.get_figure()
+                pic_save.savefig(path_save + str(i) + '.jpeg')
+                plt.clf()
 
         feat = torch.zeros(x[0].size()).cuda()
         for j in range(num_agent):

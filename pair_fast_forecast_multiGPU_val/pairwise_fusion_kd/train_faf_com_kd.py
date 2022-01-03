@@ -59,6 +59,17 @@ def check_folder(folder_path):
         os.mkdir(folder_path)
     return folder_path
 
+# def process_supervise_data(raw_data):
+#     process_data = {}
+#     process_data['bev_seq'] = []
+#     process_data['trans_matrices'] = []
+#     for i in range(len(raw_data)):
+#         process_data['bev_seq'].append(raw_data[i]['padded_voxel_points'])
+#         process_data['trans_matrices'].append(raw_data[i]['trans_matrices'])
+#     process_data['bev_seq'] = torch.cat(tuple(process_data['bev_seq']), 0)
+#     process_data['trans_matrices'] = torch.cat(tuple(process_data['trans_matrices']), 0)
+#     return process_data
+
 
 def main(config, config_global, args):
     num_epochs = args.nepoch
@@ -66,6 +77,12 @@ def main(config, config_global, args):
     num_workers = args.nworker
     only_load_model = args.model_only
     forecast_num = args.forecast_num
+    latency_lambda = args.latency_lambda
+    config.forecast = args.forecast_model
+    config.forecast_loss = args.forecast_loss 
+    if args.mode == 'train':
+        config.forecast_KD = args.forecast_KD
+    untrainable_list = args.utp
     start_epoch = 1
 
     # communicate a single layer [0: 32*256*256, 1: 64*128*128, 2: 128*64*64, 3: 256*32*32,  4: 512*16*16] [C, W, H]
@@ -76,7 +93,9 @@ def main(config, config_global, args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     device_num = torch.cuda.device_count()
     print("device number", device_num)
-
+    print("latency_lambda: ",latency_lambda)
+    for i in latency_lambda:
+        print('latency: ', i)
     if args.mode == 'train':
         # Whether to log the training information
         if need_log:
@@ -105,9 +124,9 @@ def main(config, config_global, args):
                 for f in python_files:
                     copy(f, model_save_path)
             else:
-                model_save_path = args.resume[:args.resume.rfind('/')]
+                # model_save_path = args.resume[:args.resume.rfind('/')]
                 torch.load(args.resume)  # eg, "logs/train_multi_seq/1234-56-78-11-22-33"
-
+                model_save_path = args.logpath
                 log_file_name = os.path.join(model_save_path, 'log.txt')
                 saver = open(log_file_name, "a")
                 saver.write("GPU number: {}\n".format(torch.cuda.device_count()))
@@ -128,7 +147,7 @@ def main(config, config_global, args):
                                      reg_loss_mask_example, \
                                      anchors_map_example, motion_one_hot_example, motion_mask_example, vis_maps_example,
                                      dataset_root=args.data, config=config, config_global=config_global, agent_list = ['/agent0', '/agent1', '/agent2', '/agent3', '/agent4'],
-                                     split='train', forecast_num = forecast_num)
+                                     split='train', forecast_num = forecast_num,latency_lambda = latency_lambda)
 
         # trainset0 = CarscenesDataset(padded_voxel_points_example, label_one_hot_example, reg_target_example,
         #                              reg_loss_mask_example, \
@@ -173,7 +192,7 @@ def main(config, config_global, args):
                                      reg_loss_mask_example, \
                                      anchors_map_example, motion_one_hot_example, motion_mask_example, vis_maps_example,
                                      dataset_root=args.data, config=config, config_global=config_global, agent_list = ['/agent0', '/agent1', '/agent2', '/agent3', '/agent4'],
-                                     split='val', val=True, forecast_num = forecast_num)
+                                     split='val', val=True, forecast_num = forecast_num,latency_lambda=latency_lambda)
         # valset0 = CarscenesDataset(padded_voxel_points_example, label_one_hot_example, reg_target_example,
         #                            reg_loss_mask_example, \
         #                            anchors_map_example, motion_one_hot_example, motion_mask_example, vis_maps_example,
@@ -240,7 +259,7 @@ def main(config, config_global, args):
             if config.KD:
                 model = FaFMIMONet_256_32_32_KD(config)
             else:
-                model = FaFMIMONet_256_32_32(config)
+                model = FaFMIMONet_256_32_32(config, forecast_num = forecast_num)
                 # model = nn.DataParallel(model)
         else:
             if config.KD:
@@ -258,6 +277,7 @@ def main(config, config_global, args):
         model = model.to(device)
         # specify optimizer
         optimizer = optim.Adam(model.parameters(), lr=args.lr)
+        optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr)
 
     # specify creterion
     criterion = {'cls': SoftmaxFocalClassificationLoss(), 'loc': WeightedSmoothL1LocalizationLoss()}
@@ -274,7 +294,6 @@ def main(config, config_global, args):
         print("Load teacher model from {}, at epoch {}".format(args.resume_teacher, start_epoch_teacher))
     else:
         fafmodule = FaFModule(model, config, optimizer, criterion)
-
     if args.resume != '' or args.mode == 'val':
         checkpoint = torch.load(args.resume)
         model_save_path = args.resume[:args.resume.rfind('/')]
@@ -291,12 +310,49 @@ def main(config, config_global, args):
                 fafmodule.scheduler_head.load_state_dict(checkpoint['scheduler_head_state_dict'])
                 fafmodule.optimizer_head.load_state_dict(checkpoint['optimizer_head_state_dict'])
         else:
-            fafmodule.model.load_state_dict(checkpoint['model_state_dict'])
+            # net1 = fafmodule.model
+            # model1_dict = net1.state_dict()
+            model1_dict = fafmodule.model.state_dict()
+            state_1_dict = {k:v for k,v in checkpoint['model_state_dict'].items() if k in model1_dict.keys()}
+            for key in state_1_dict.keys():
+                print(key)
+            print(len(state_1_dict.keys()))
+            print(len(model1_dict.keys()))
+            model1_dict.update(state_1_dict)
+            fafmodule.model.load_state_dict(model1_dict)
+            for key in checkpoint['model_state_dict'].keys():
+                if key not in model1_dict.keys():
+                    print(key)
             if not only_load_model:
-                fafmodule.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-                fafmodule.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+                net2 = fafmodule.scheduler
+                model2_dict = net2.state_dict()
+                state_2_dict = {k:v for k,v in checkpoint['scheduler_state_dict'].items() if k in model2_dict.keys()}
+                model2_dict.update(state_2_dict)
+                fafmodule.scheduler.load_state_dict(model2_dict)
+
+                # net3 = fafmodule.optimizer
+                # model3_dict = net3.state_dict()
+                # state_3_dict = {k.strip('module.'):v for k,v in checkpoint['optimizer_state_dict'].items() if k.strip('module.') in model3_dict.keys()}
+                # model3_dict.update(state_3_dict)
+                # fafmodule.optimizer.load_state_dict(model3_dict)
+                # fafmodule.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+                # fafmodule.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
         print("Load model from {}, at epoch {}".format(args.resume, start_epoch - 1))
+
+        if args.mode == 'train':
+            for k,v in fafmodule.model.named_parameters(): 
+                for para in untrainable_list:
+                    if para in k: #or ('decoder' in k): 
+                        v.requires_grad = False
+            for k,v in fafmodule.model.named_parameters(): 
+                if v.requires_grad == True:
+                    print(k,': ', v.requires_grad)
+                # print(k)
+                # if 'encoder' in k: 
+                #     v.requires_grad=False
+        
+        fafmodule.optimizer = optim.Adam(filter(lambda p: p.requires_grad, fafmodule.model.parameters()), lr=args.lr)
 
     if args.mode == 'train':
 
@@ -304,7 +360,7 @@ def main(config, config_global, args):
         indices = list(range(n_train))
         data_cache = {}
         for epoch in range(start_epoch, num_epochs + 1):
-            # trainset.seq_dict[0] = trainset.get_data_dict(trainset.dataset_root_peragent)
+            trainset.seq_dict[0] = trainset.get_data_dict(trainset.dataset_root_peragent)
             if config.MGDA:
                 lr = fafmodule.optimizer_head.param_groups[0]['lr']
             else:
@@ -318,6 +374,8 @@ def main(config, config_global, args):
             running_loss_disp = AverageMeter('Total loss', ':.6f')  # for motion prediction error
             running_loss_class = AverageMeter('classification Loss', ':.6f')  # for cell classification error
             running_loss_loc = AverageMeter('Localization Loss', ':.6f')  # for state estimation error
+            if config.forecast_loss == 'True':
+                running_loss_fore = AverageMeter('Forecast Loss', ':.6f')  # for forecast estimation error
 
             if config.MGDA:
                 fafmodule.scheduler_encoder.step()
@@ -327,6 +385,21 @@ def main(config, config_global, args):
             else:
                 fafmodule.scheduler.step()
                 fafmodule.model.train()
+                # fafmodule.model.eval()
+                if "decoder" in untrainable_list:
+                    fafmodule.model.module.decoder.eval()
+                if "encoder" in untrainable_list:
+                    fafmodule.model.module.decoder.eval()
+                if "adafusion" in untrainable_list:
+                    fafmodule.model.module.adafusion.eval()
+                if "regression" in untrainable_list:
+                    fafmodule.model.module.decoder.eval()
+                if "classification" in untrainable_list:
+                    fafmodule.model.module.decoder.eval()
+                if "forecast" in untrainable_list:
+                    fafmodule.model.module.decoder.eval()
+                    
+                
             step_ct = 1
             t = time.time()
 
@@ -352,6 +425,11 @@ def main(config, config_global, args):
                 padded_voxel_points3, padded_voxel_points_teacher3, label_one_hot3, reg_target3, reg_loss_mask3, anchors_map3, vis_maps3, target_agent_id3, num_sensor3, trans_matrices3, filename3, current_pose_rec3, current_cs_rec3 = sample[3]['padded_voxel_points'] ,sample[3]['padded_voxel_points_teacher'] ,sample[3]['label_one_hot'] ,sample[3]['reg_target'] ,sample[3]['reg_loss_mask'] ,sample[3]['anchors_map'] ,sample[3]['vis_maps'] ,sample[3]['target_agent_id'] ,sample[3]['num_sensor'] ,sample[3]['trans_matrices'], sample[3]['filename'], sample[3]['current_pose_rec'], sample[3]['current_cs_rec']
                 padded_voxel_points4, padded_voxel_points_teacher4, label_one_hot4, reg_target4, reg_loss_mask4, anchors_map4, vis_maps4, target_agent_id4, num_sensor4, trans_matrices4, filename4, current_pose_rec4, current_cs_rec4 = sample[4]['padded_voxel_points'] ,sample[4]['padded_voxel_points_teacher'] ,sample[4]['label_one_hot'] ,sample[4]['reg_target'] ,sample[4]['reg_loss_mask'] ,sample[4]['anchors_map'] ,sample[4]['vis_maps'] ,sample[4]['target_agent_id'] ,sample[4]['num_sensor'] ,sample[4]['trans_matrices'], sample[4]['filename'], sample[4]['current_pose_rec'], sample[4]['current_cs_rec']
                 center_agent = sample['center_agent']
+                
+                supervise_data = sample['supervise']
+                
+                # supervise_data = process_supervise_data(supervise_data)
+
                 time_t1 = time.time()
                 print("计时点1", time_t1 - time_t0)
                 current_pose_rec_list = [current_pose_rec0, current_pose_rec1, current_pose_rec2, current_pose_rec3, current_pose_rec4]
@@ -405,6 +483,9 @@ def main(config, config_global, args):
                 # data['target_agent_ids'] = target_agent_ids.to(device)
                 data['num_agent'] = num_agent.to(device)
                 data['trans_matrices'] = trans_matrices
+                data['supervise'] = supervise_data
+                data['teacher'] = padded_voxel_points_teacher0
+                data['filename'] = filename0
                 time_8 = time.time()
                 time_c = time_8- time_10
                 time_t5 = time.time()
@@ -422,10 +503,17 @@ def main(config, config_global, args):
                 if config.KD:
                     loss, cls_loss, loc_loss,kd_loss = fafmodule.step(data, batch_size, center_agent)
                 else:
-                    loss, cls_loss, loc_loss = fafmodule.step(data, batch_size, center_agent, forecast_num)
+                    if config.forecast_loss == 'True' and config.forecast_KD == 'False':
+                        loss, cls_loss, loc_loss, fore_loss = fafmodule.step(data, batch_size, center_agent, forecast_num, config)
+                    elif config.forecast_loss == 'True' and config.forecast_KD == 'True':
+                        loss, cls_loss, loc_loss, fore_loss, kd_loss = fafmodule.step(data, batch_size, center_agent, forecast_num, config)
+                    else: 
+                        loss, cls_loss, loc_loss = fafmodule.step(data, batch_size, center_agent, forecast_num, config)
                 running_loss_disp.update(loss)
                 running_loss_class.update(cls_loss)
                 running_loss_loc.update(loc_loss)
+                if config.forecast_loss == 'True':
+                    running_loss_fore.update(fore_loss)
                 time_10 = time.time()
                 print("total_time:", time_10 - time_9)
                 step_ct += 1
@@ -433,10 +521,15 @@ def main(config, config_global, args):
                 print("Running total loss: {}".format(running_loss_disp.avg))
                 print("Running total cls loss: {}".format(running_loss_class.avg))
                 print("Running total loc loss: {}".format(running_loss_loc.avg))
-
-            print("{}\t{}\t{}\t Takes {} s\n".format(running_loss_disp, running_loss_class, running_loss_loc,
-                                                     str(time.time() - t)))
-
+                print("Running total KD loss: {}".format(kd_loss))
+                if config.forecast_loss == 'True':
+                    print("Running total fore loss: {}".format(running_loss_fore.avg))
+            if config.forecast_loss == 'True':
+                print("{}\t{}\t{}\t{}\t Takes {} s\n".format(running_loss_disp, running_loss_class, running_loss_loc,running_loss_fore,
+                                                        str(time.time() - t)))
+            else:
+                print("{}\t{}\t{}\t Takes {} s\n".format(running_loss_disp, running_loss_class, running_loss_loc,
+                                                        str(time.time() - t)))
             # save model
             if need_log:
                 if config.KD:
@@ -469,7 +562,7 @@ def main(config, config_global, args):
         # save_fig_path1 = os.path.join(model_save_path, 'vis_result_agent1')
         # save_fig_path2 = os.path.join(model_save_path, 'vis_result_agent2')
         # save_fig_path3 = os.path.join(model_save_path, 'vis_result_agent3')
-        # save_fig_path4 = os.path.join(model_save_path, 'vis_result_agent4')
+        # save_fig_path4 = os.path.join(model_save_path, 'vis_result_agent4') 
         # check_folder(save_fig_path0)
         # check_folder(save_fig_path1)
         # check_folder(save_fig_path2)
@@ -504,11 +597,11 @@ def main(config, config_global, args):
             # padded_voxel_points4, label_one_hot4, reg_target4, reg_loss_mask4, anchors_map4, vis_maps4, gt_max_iou4, filename4, target_agent_id4, num_sensor4, trans_matrices4, _, _, _, _, _ = sample[4]['padded_voxel_points'],sample[4]['label_one_hot'] ,sample[4]['reg_target'] ,sample[4]['reg_loss_mask'] ,sample[4]['anchors_map'] ,sample[4]['vis_maps'], sample[4]['gt_max_iou'], sample[4]['filename'], sample[4]['target_agent_id'] ,sample[4]['num_sensor'] ,sample[4]['trans_matrices'],sample[4]['padded_voxel_points_global'],sample[4]['reg_target_global'],sample[4]['anchors_map_global'],sample[4]['gt_max_iou_global'],sample[4]['trans_matrices_map']
             center_agent = sample['center_agent']
             padded_voxel_points0, label_one_hot0, reg_target0, reg_loss_mask0, anchors_map0, vis_maps0, gt_max_iou0, filename0, \
-            target_agent_id0, num_sensor0, trans_matrices0, trans_matrices_map, filename0 = sample[0]['padded_voxel_points'] ,sample[0]['label_one_hot'] ,sample[0]['reg_target'] ,sample[0]['reg_loss_mask'] ,sample[0]['anchors_map'] ,sample[0]['vis_maps'], sample[0]['gt_max_iou'], sample[0]['filename'], sample[0]['target_agent_id'] ,sample[0]['num_sensor'] ,sample[0]['trans_matrices'],sample[0]['trans_matrices_map'], sample[0]['filename']
-            padded_voxel_points1, label_one_hot1, reg_target1, reg_loss_mask1, anchors_map1, vis_maps1, gt_max_iou1, filename1, target_agent_id1, num_sensor1, trans_matrices1, _, filename1 = sample[1]['padded_voxel_points'], sample[1]['label_one_hot'] ,sample[1]['reg_target'] ,sample[1]['reg_loss_mask'] ,sample[1]['anchors_map'] ,sample[1]['vis_maps'], sample[1]['gt_max_iou'], sample[1]['filename'], sample[1]['target_agent_id'] ,sample[1]['num_sensor'] ,sample[1]['trans_matrices'],sample[1]['trans_matrices_map'], sample[1]['filename']
-            padded_voxel_points2, label_one_hot2, reg_target2, reg_loss_mask2, anchors_map2, vis_maps2, gt_max_iou2, filename2, target_agent_id2, num_sensor2, trans_matrices2, _, filename2 = sample[2]['padded_voxel_points'], sample[2]['label_one_hot'] ,sample[2]['reg_target'] ,sample[2]['reg_loss_mask'] ,sample[2]['anchors_map'] ,sample[2]['vis_maps'], sample[2]['gt_max_iou'], sample[2]['filename'], sample[2]['target_agent_id'] ,sample[2]['num_sensor'] ,sample[2]['trans_matrices'],sample[2]['trans_matrices_map'], sample[2]['filename']
-            padded_voxel_points3, label_one_hot3, reg_target3, reg_loss_mask3, anchors_map3, vis_maps3, gt_max_iou3, filename3, target_agent_id3, num_sensor3, trans_matrices3, _, filename3 = sample[3]['padded_voxel_points'] ,sample[3]['label_one_hot'] ,sample[3]['reg_target'] ,sample[3]['reg_loss_mask'] ,sample[3]['anchors_map'] ,sample[3]['vis_maps'], sample[3]['gt_max_iou'], sample[3]['filename'], sample[3]['target_agent_id'] ,sample[3]['num_sensor'] ,sample[3]['trans_matrices'],sample[3]['trans_matrices_map'], sample[3]['filename']
-            padded_voxel_points4, label_one_hot4, reg_target4, reg_loss_mask4, anchors_map4, vis_maps4, gt_max_iou4, filename4, target_agent_id4, num_sensor4, trans_matrices4, _, filename4 = sample[4]['padded_voxel_points'],sample[4]['label_one_hot'] ,sample[4]['reg_target'] ,sample[4]['reg_loss_mask'] ,sample[4]['anchors_map'] ,sample[4]['vis_maps'], sample[4]['gt_max_iou'], sample[4]['filename'], sample[4]['target_agent_id'] ,sample[4]['num_sensor'] ,sample[4]['trans_matrices'],sample[4]['trans_matrices_map'], sample[4]['filename']
+            target_agent_id0, num_sensor0, trans_matrices0, trans_matrices_map, filename0, current_pose_rec0, current_cs_rec0  = sample[0]['padded_voxel_points'] ,sample[0]['label_one_hot'] ,sample[0]['reg_target'] ,sample[0]['reg_loss_mask'] ,sample[0]['anchors_map'] ,sample[0]['vis_maps'], sample[0]['gt_max_iou'], sample[0]['filename'], sample[0]['target_agent_id'] ,sample[0]['num_sensor'] ,sample[0]['trans_matrices'],sample[0]['trans_matrices_map'], sample[0]['filename'], sample[0]['current_pose_rec'], sample[0]['current_cs_rec']
+            padded_voxel_points1, label_one_hot1, reg_target1, reg_loss_mask1, anchors_map1, vis_maps1, gt_max_iou1, filename1, target_agent_id1, num_sensor1, trans_matrices1, _, filename1, current_pose_rec1, current_cs_rec1 = sample[1]['padded_voxel_points'], sample[1]['label_one_hot'] ,sample[1]['reg_target'] ,sample[1]['reg_loss_mask'] ,sample[1]['anchors_map'] ,sample[1]['vis_maps'], sample[1]['gt_max_iou'], sample[1]['filename'], sample[1]['target_agent_id'] ,sample[1]['num_sensor'] ,sample[1]['trans_matrices'],sample[1]['trans_matrices_map'], sample[1]['filename'], sample[1]['current_pose_rec'], sample[1]['current_cs_rec']
+            padded_voxel_points2, label_one_hot2, reg_target2, reg_loss_mask2, anchors_map2, vis_maps2, gt_max_iou2, filename2, target_agent_id2, num_sensor2, trans_matrices2, _, filename2, current_pose_rec2, current_cs_rec2 = sample[2]['padded_voxel_points'], sample[2]['label_one_hot'] ,sample[2]['reg_target'] ,sample[2]['reg_loss_mask'] ,sample[2]['anchors_map'] ,sample[2]['vis_maps'], sample[2]['gt_max_iou'], sample[2]['filename'], sample[2]['target_agent_id'] ,sample[2]['num_sensor'] ,sample[2]['trans_matrices'],sample[2]['trans_matrices_map'], sample[2]['filename'], sample[2]['current_pose_rec'], sample[2]['current_cs_rec']
+            padded_voxel_points3, label_one_hot3, reg_target3, reg_loss_mask3, anchors_map3, vis_maps3, gt_max_iou3, filename3, target_agent_id3, num_sensor3, trans_matrices3, _, filename3, current_pose_rec3, current_cs_rec3 = sample[3]['padded_voxel_points'] ,sample[3]['label_one_hot'] ,sample[3]['reg_target'] ,sample[3]['reg_loss_mask'] ,sample[3]['anchors_map'] ,sample[3]['vis_maps'], sample[3]['gt_max_iou'], sample[3]['filename'], sample[3]['target_agent_id'] ,sample[3]['num_sensor'] ,sample[3]['trans_matrices'],sample[3]['trans_matrices_map'], sample[3]['filename'], sample[3]['current_pose_rec'], sample[3]['current_cs_rec']
+            padded_voxel_points4, label_one_hot4, reg_target4, reg_loss_mask4, anchors_map4, vis_maps4, gt_max_iou4, filename4, target_agent_id4, num_sensor4, trans_matrices4, _, filename4, current_pose_rec4, current_cs_rec4 = sample[4]['padded_voxel_points'],sample[4]['label_one_hot'] ,sample[4]['reg_target'] ,sample[4]['reg_loss_mask'] ,sample[4]['anchors_map'] ,sample[4]['vis_maps'], sample[4]['gt_max_iou'], sample[4]['filename'], sample[4]['target_agent_id'] ,sample[4]['num_sensor'] ,sample[4]['trans_matrices'],sample[4]['trans_matrices_map'], sample[4]['filename'], sample[4]['current_pose_rec'], sample[4]['current_cs_rec']
             padded_voxel_points_list = [padded_voxel_points0, padded_voxel_points1, padded_voxel_points2,
                                         padded_voxel_points3, padded_voxel_points4]
             # label_one_hot_list = [label_one_hot0, label_one_hot1, label_one_hot2, label_one_hot3, label_one_hot4]
@@ -517,6 +610,8 @@ def main(config, config_global, args):
             # anchors_map_list = [anchors_map0, anchors_map1, anchors_map2, anchors_map3, anchors_map4]
             label_one_hot_list = [label_one_hot0]
             reg_target_list = [reg_target0]
+            current_pose_rec_list = [current_pose_rec0, current_pose_rec1, current_pose_rec2, current_pose_rec3, current_pose_rec4]
+            current_cs_rec0_list = [current_cs_rec0, current_cs_rec1, current_cs_rec2, current_cs_rec3, current_cs_rec4]
             # reg_target_list = [reg_target0, reg_target1, reg_target2, reg_target3, reg_target4]
             reg_loss_mask_list = [reg_loss_mask0]
             # reg_loss_mask_list = [reg_loss_mask0, reg_loss_mask1, reg_loss_mask2, reg_loss_mask3, reg_loss_mask4]
@@ -541,6 +636,8 @@ def main(config, config_global, args):
             vis_maps = torch.cat(tuple(vis_maps_list), 0)
 
             data = {}
+            data['current_pose_rec'] = current_pose_rec_list
+            data['current_cs_rec'] = current_cs_rec0_list
             data['bev_seq'] = padded_voxel_points.to(device)
             data['labels'] = label_one_hot.to(device)
             data['reg_targets'] = reg_target.to(device)
@@ -551,9 +648,10 @@ def main(config, config_global, args):
             data['target_agent_ids'] = target_agent_ids.to(device)
             data['num_agent'] = num_agent.to(device)
             data['trans_matrices'] = trans_matrices
+            data['filename'] = filename0
 
-            loss, cls_loss, loc_loss, result = fafmodule.predict_all(data, 1, True, center_agent)
-
+            loss, cls_loss, loc_loss, result = fafmodule.predict_all(data, 1, True, center_agent, forecast_num, config)
+            
             # local qualitative evaluation
             # for k in range(int(num_sensor0[0])):
             for k in range(1):
@@ -571,8 +669,12 @@ def main(config, config_global, args):
                         'reg_targets': data_agents['reg_targets'].cpu().numpy()[0],
                         'anchors_map': data_agents['anchors'].cpu().numpy()[0],
                         'gt_max_iou': data_agents['gt_max_iou']}
-                det_results_local[k], annotations_local[k] = cal_local_mAP(config, temp, det_results_local[k],
-                                                                           annotations_local[k])
+                det_results_local[k], annotations_local[k], det_results_local_temp, annotations_local_temp = cal_local_mAP(config, temp, det_results_local[k], annotations_local[k])
+                temp['det_results_local_temp'] = det_results_local_temp
+                temp['annotations_local_temp'] = annotations_local_temp
+                map_result_0_5, _ = eval_map([det_results_local_temp], [annotations_local_temp], scale_ranges=None,iou_thr=0.5,dataset=None, logger=None)
+
+                map_result_0_7, _ = eval_map([det_results_local_temp], [annotations_local_temp], scale_ranges=None,iou_thr=0.7,dataset=None, logger=None)
 
                 filename = str(filename0[0][0])
                 cut = filename[filename.rfind('agent') + 7:]
@@ -580,10 +682,17 @@ def main(config, config_global, args):
                 idx = cut[cut.rfind('_') + 1:cut.rfind('/')]
                 # seq_save = os.path.join(save_fig_path[k], seq_name)
                 # check_folder(seq_save)
+                idx = filename0[-1].split('/')[-1]
+                scene = idx.split('_')[0]
                 idx_save = str(idx) + '.png'
-
-                # if args.visualization:
-                #     visualization(config, temp, os.path.join(seq_save, idx_save))
+                pth_save = str(idx)
+                if args.visualization:
+                    seq_save = args.resume.strip('.pth') +  '_' + str(latency_lambda[0])
+                    check_folder(seq_save)
+                    seq_save = seq_save  + '/' + scene
+                    check_folder(seq_save)
+                    np.save(os.path.join(seq_save, pth_save), temp)
+                    visualization(config, temp, os.path.join(seq_save, idx_save),map_result_0_5, map_result_0_7)
 
             print("Validation scene {}, at frame {}".format(seq_name, idx))
             running_loss_disp.update(loss)
@@ -611,7 +720,7 @@ def main(config, config_global, args):
         saver_val.write(str(mean_ap_local_average))
 
         #local mAP evaluation
-        for k in range(4):
+        for k in range(1):
             saver_val.write('\nlocal{} results@iou0.5\n'.format(k+1))
             mean_ap, _ = eval_map(det_results_local[k],annotations_local[k],scale_ranges=None,iou_thr=0.5,dataset=None,logger=None)
             print(mean_ap)
@@ -624,8 +733,8 @@ def main(config, config_global, args):
 
     else:
         print('Not implemented yet.')
-    if need_log:
-        saver.close()
+    # if need_log:
+    #     saver.close()
 
 
 if __name__ == "__main__":
@@ -636,19 +745,24 @@ if __name__ == "__main__":
     parser.add_argument('--kd', default=100000, type=float, help='kd_weight')
     parser.add_argument('--model_only', action='store_true', help='only load model')
     parser.add_argument('--batch', default=2, type=int, help='Batch size')
-    parser.add_argument('--nepoch', default=100, type=int, help='Number of epochs')
+    parser.add_argument('--nepoch', default=200, type=int, help='Number of epochs')
     parser.add_argument('--layer', default=3, type=int, help='Communicate which layer')
     parser.add_argument('--nworker', default=0, type=int, help='Number of workers')
     parser.add_argument('--lr', default=0.001, type=float, help='Initial learning rate')
     parser.add_argument('--log', action='store_true', help='Whether to log')
     parser.add_argument('--logpath', default='./log', help='The path to the output log file')
     parser.add_argument('--mode', default=None, help='Train/Val mode')
-    parser.add_argument('--visualization', default=True, help='Visualize validation result')
+    parser.add_argument('--visualization', default=False, help='Visualize validation result')
+    parser.add_argument('--latency_lambda', default=[1,1,1,1,1], nargs='+', type=int, help='How many frames do you want to use in forecast')
     parser.add_argument('--binary', default=True, type=bool, help='Only detect car')
     parser.add_argument('--only_det', default=True, type=bool, help='Only do detection')
-    parser.add_argument('--logname', default=None, type=str, help='log the detection performance')
+    parser.add_argument('--logname', default='./log', type=str, help='log the detection performance')
+    parser.add_argument('--forecast_model', default='MotionLSTM', type=str, help='Forecast model')
+    parser.add_argument('--forecast_loss', default='True', type=str, help='Whether to use Forecast Loss')
+    parser.add_argument('--forecast_KD', default='False', type=str, help='Whether to use Forecast KD')
     parser.add_argument('--forecast_num', default=4, type=int, help='How many frames do you want to use in forecast')
-
+    parser.add_argument('--utp', default=['encoder','decoder','classification','regression'], nargs='+', type=str, help='untrain 6able parameters')
+    
     torch.multiprocessing.set_sharing_strategy('file_system')
 
     args = parser.parse_args()

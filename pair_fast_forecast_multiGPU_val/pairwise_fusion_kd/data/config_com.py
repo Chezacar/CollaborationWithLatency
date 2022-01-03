@@ -3,7 +3,7 @@ import math
 class Config(object):
 	def __init__(self,split,binary=True,only_det=True,code_type='faf',loss_type='faf_loss',savepath='',root=''):
 		self.KD = False
-
+		self.forecast_loss = True
 		self.device = None
 		self.split = split
 		self.savepath = savepath
@@ -11,7 +11,12 @@ class Config(object):
 		self.only_det = only_det
 		self.code_type = code_type
 		self.loss_type = loss_type #corner_loss faf_loss
-		self.forecast = 'MotionNet'
+		# self.forecast = 'Baseline'
+		# self.forecast = 'LSTM'
+		self.forecast = 'MotionLSTM'
+		self.forecast_KD = 'False'
+		# self.forecast = 'MotionNet'
+		self.forecast_loss = 'False'
 		# The specifications for BEV maps
 		self.voxel_size = (0.25, 0.25, 0.4)
 		self.area_extents = np.array([[-32., 32.], [-32., 32.], [-3., 2.]])

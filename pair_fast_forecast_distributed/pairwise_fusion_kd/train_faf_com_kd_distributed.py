@@ -89,12 +89,20 @@ def main():
     parser.add_argument('--binary', default=True, type=bool, help='Only detect car')
     parser.add_argument('--only_det', default=True, type=bool, help='Only do detection')
     parser.add_argument('--logname', default=None, type=str, help='log the detection performance')
-    parser.add_argument('--forecast_num', default=4, type=int, help='How many frames do you want to use in forecast')
+    parser.add_argument('--forecast_num', default=1, type=int, help='How many frames do you want to use in forecast')
+    parser.add_argument('--latency_lambda', default=[0,0,0,0,0], nargs='+', type=int, help='How many frames do you want to use in forecast')
     parser.add_argument('--rank', default=0, type=int, help='node rank for distributed training')
     parser.add_argument('--ngpus_per_node', default=2, type=int)
     parser.add_argument('--gpu', default=2, type=int, help='GPU id to use.')
     parser.add_argument('--world_size', default=2, type=int, help='How many GPU to use.')
-
+    parser.add_argument('--forecast_model', default='MotionLSTM', type=str, help='Forecast model')
+    parser.add_argument('--forecast_loss', default='True', type=str, help='Whether to use Forecast Loss')
+    parser.add_argument('--forecast_KD', default='False', type=str, help='Whether to use Forecast KD')
+    parser.add_argument('--load_model', default='None', type=str, help='Path of Load Model.')
+    parser.add_argument('--encoder', default= 'False', type=str, help='Path of Load Model.')
+    parser.add_argument('--decoder', default='True', type=str, help='Path of Load Model.')
+    parser.add_argument('--port', default='10000', type=str, help='DDP port')
+    parser.add_argument('--utp', default=['encoder','decoder','adafusion','classification','regression'], nargs='+', type=str, help='untrainable parameters')
 
     # torch.multiprocessing.set_sharing_strategy('file_system')
 

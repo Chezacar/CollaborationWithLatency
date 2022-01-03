@@ -20,6 +20,7 @@ from data.data_com_parallel import NuscenesDataset, CarscenesDataset
 from data.config_com import Config, ConfigGlobal
 from utils.mean_ap import eval_map
 from tqdm import tqdm
+from torch.utils.tensorboard import SummaryWriter
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""
@@ -56,18 +57,24 @@ def main_worker(rank, world_size, config, config_global, args):
 # def main_worker(rank, para):
     # [world_size, config, config_global, args] = para
     os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = '10086'
+    os.environ['MASTER_PORT'] = args.port
     dist.init_process_group("nccl", rank=rank, world_size=world_size)
     # [ngpus_per_node,config, config_global, args] = para_list 
     # args.gpu = gpu
     # args.rank = args.rank * ngpus_per_node + gpu
     # dist.init_process_group(backend='nccl', init_method='tcp://127.0.0.1:23456', world_size=ngpus_per_node, rank=gpu)
     # torch.cuda.set_device(args.rank)
+    tbwriter = SummaryWriter(str('./experiment/tensorboardlog/' + str(time.asctime( time.localtime(time.time()) )) + str(rank)))
     num_epochs = args.nepoch
     need_log = args.log
     num_workers = args.nworker
     only_load_model = args.model_only
     forecast_num = args.forecast_num
+    latency_lambda = args.latency_lambda
+    config.forecast = args.forecast_model
+    config.forecast_loss = args.forecast_loss
+    config.forecast_KD = args.forecast_KD
+    untrainable_list = args.utp
     start_epoch = 1
 
     # communicate a single layer [0: 32*256*256, 1: 64*128*128, 2: 128*64*64, 3: 256*32*32,  4: 512*16*16] [C, W, H]
@@ -81,8 +88,8 @@ def main_worker(rank, world_size, config, config_global, args):
     # device_num = torch.cuda.device_count()
     # print("device number", device_num)
     # torch.cuda.set_device(6)
-    os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = '5678'
+    # os.environ['MASTER_ADDR'] = 'localhost'
+    # os.environ['MASTER_PORT'] = '4567'
     # dist.init_process_group(backend='nccl',rank=1,world_size=2)
     # torch.cuda.set_device(2)
 
@@ -91,6 +98,8 @@ def main_worker(rank, world_size, config, config_global, args):
         if need_log and rank == 0:
             logger_root = args.logpath if args.logpath != '' else 'logs'
             time_stamp = time.strftime("%Y-%m-%d_%H-%M-%S")
+
+        
 
             if args.resume == '':
                 model_save_path = check_folder(logger_root ,rank)
@@ -114,9 +123,12 @@ def main_worker(rank, world_size, config, config_global, args):
                 for f in python_files:
                     copy(f, model_save_path)
             else:
-                model_save_path = args.resume[:args.resume.rfind('/')]
+                # model_save_path = args.resume[:args.resume.rfind('/')]
+                model_save_path = args.logpath
                 torch.load(args.resume)  # eg, "logs/train_multi_seq/1234-56-78-11-22-33"
 
+                if not os.path.exists(model_save_path):
+                    os.makedirs(model_save_path)
                 log_file_name = os.path.join(model_save_path, 'log.txt')
                 saver = open(log_file_name, "a")
                 saver.write("GPU number: {}\n".format(torch.cuda.device_count()))
@@ -137,7 +149,7 @@ def main_worker(rank, world_size, config, config_global, args):
                                      reg_loss_mask_example, \
                                      anchors_map_example, motion_one_hot_example, motion_mask_example, vis_maps_example,
                                      dataset_root=args.data, config=config, config_global=config_global, agent_list = ['/agent0', '/agent1', '/agent2', '/agent3', '/agent4'],
-                                     split='train', forecast_num = forecast_num)
+                                     split='train', forecast_num = forecast_num, latency_lambda = latency_lambda)
 
         # trainset0 = CarscenesDataset(padded_voxel_points_example, label_one_hot_example, reg_target_example,
         #                              reg_loss_mask_example, \
@@ -182,7 +194,7 @@ def main_worker(rank, world_size, config, config_global, args):
                                      reg_loss_mask_example, \
                                      anchors_map_example, motion_one_hot_example, motion_mask_example, vis_maps_example,
                                      dataset_root=args.data, config=config, config_global=config_global, agent_list = ['/agent0', '/agent1', '/agent2', '/agent3', '/agent4'],
-                                     split='val', val=True)
+                                     split='val', val=True, latency_lambda = latency_lambda)
         # valset0 = CarscenesDataset(padded_voxel_points_example, label_one_hot_example, reg_target_example,
         #                            reg_loss_mask_example, \
         #                            anchors_map_example, motion_one_hot_example, motion_mask_example, vis_maps_example,
@@ -249,8 +261,8 @@ def main_worker(rank, world_size, config, config_global, args):
             if config.KD:
                 model = FaFMIMONet_256_32_32_KD(config)
             else:
-                model = FaFMIMONet_256_32_32(config).to(rank)
-                model = DDP(model, device_ids = [rank], find_unused_parameters=True)
+                model = FaFMIMONet_256_32_32(config,forecast_num=args.forecast_num).to(rank)
+                # model = DDP(model, device_ids = [rank], find_unused_parameters=True)
         else:
             if config.KD:
                 model = FaFMIMONet_512_16_16_KD(config)
@@ -268,9 +280,15 @@ def main_worker(rank, world_size, config, config_global, args):
         # specify optimizer
         optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
+
     # specify creterion
     criterion = {'cls': SoftmaxFocalClassificationLoss(), 'loc': WeightedSmoothL1LocalizationLoss()}
 
+    # if args.load_model != 'None':
+    #     print('load model from %s ...' % args.load_model)
+    #     model = torch.load(args.load_model)
+    #     print('success!')
+        # model = DDP(model, device_ids = [rank], find_unused_parameters=True)
     if config.KD:
         teacher = FaFNet(config)
         teacher = nn.DataParallel(teacher)
@@ -284,9 +302,12 @@ def main_worker(rank, world_size, config, config_global, args):
     else:
         fafmodule = FaFModule(model, config, optimizer, criterion)
 
-    if args.resume != '' or args.mode == 'val':
-        checkpoint = torch.load(args.resume)
-        model_save_path = args.resume[:args.resume.rfind('/')]
+    if (args.resume != '' or args.mode == 'val'):
+        # checkpoint = torch.load(args.resume,map_location=[rank])
+        map_location = {'cuda:%d' % 0: 'cuda:%d' % rank}
+        checkpoint = torch.load(args.resume, map_location=map_location)
+        # model_save_path = args.resume[:args.resume.rfind('/')]
+        model_save_path = args.logpath
         start_epoch = checkpoint['epoch'] + 1
         if only_load_model:
             start_epoch = 0
@@ -300,12 +321,58 @@ def main_worker(rank, world_size, config, config_global, args):
                 fafmodule.scheduler_head.load_state_dict(checkpoint['scheduler_head_state_dict'])
                 fafmodule.optimizer_head.load_state_dict(checkpoint['optimizer_head_state_dict'])
         else:
-            fafmodule.model.load_state_dict(checkpoint['model_state_dict'])
+            net1 = fafmodule.model
+            model1_dict = net1.state_dict()
+            # print('checkpoint:', checkpoint['model_state_dict'].keys())
+            # print('model1_dict:', model1_dict.keys())
+            state_1_dict = {k:v for k,v in checkpoint['model_state_dict'].items() if k in model1_dict.keys()}
+            # print(state_1_dict.keys())
+            # for k,v in checkpoint['model_state_dict'].items():
+                # print(k, k.lstrip('m').lstrip('o').lstrip('d').lstrip('u').lstrip('l').lstrip('e').lstrip('.') in model1_dict.keys()) 
+            state_1_dict = {k.lstrip('m').lstrip('o').lstrip('d').lstrip('u').lstrip('l').lstrip('e').lstrip('.'): v for k,v in checkpoint['model_state_dict'].items() if k.lstrip('m').lstrip('o').lstrip('d').lstrip('u').lstrip('l').lstrip('e').lstrip('.') in model1_dict.keys()}
+            print(len(state_1_dict.keys()))
+            for key in model1_dict.keys():
+                if key not in state_1_dict.keys():
+                    print(key)
+            # for key1, key2 in zip(state_1_dict.keys(),model1_dict.keys()):
+            #     print(key1, key2)
+            print(len(model1_dict.keys()))
+            # for model in model1_dict.keys():
+            #     print(key)
+            model1_dict.update(state_1_dict)
+            fafmodule.model.load_state_dict(model1_dict)
             if not only_load_model:
-                fafmodule.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-                fafmodule.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-
+                net2 = fafmodule.scheduler
+                model2_dict = net2.state_dict()
+                state_2_dict = {k.lstrip('m').lstrip('o').lstrip('d').lstrip('u').lstrip('l').lstrip('e').lstrip('.'):v for k,v in checkpoint['scheduler_state_dict'].items() if k.lstrip('m').lstrip('o').lstrip('d').lstrip('u').lstrip('l').lstrip('e').lstrip('.') in model2_dict.keys()}
+                # print(state_2_dict)
+                model2_dict.update(state_2_dict)
+                fafmodule.scheduler.load_state_dict(model2_dict)
         print("Load model from {}, at epoch {}".format(args.resume, start_epoch - 1))
+        print(rank,'yes')
+        fafmodule.model.to(device = rank)
+        fafmodule.model = DDP(fafmodule.model, device_ids = [rank], find_unused_parameters=True)
+        for k,v in fafmodule.model.named_parameters(): 
+            # print(k[])
+            for para in untrainable_list:
+                if para in k: #or ('decoder' in k): 
+                    v.requires_grad = False
+        # for k,v in fafmodule.model.named_parameters(): 
+            # if v.requires_grad == True:
+            # print(k,': ', v.requires_grad)
+                # if ('encoder' in k): #or ('decoder' in k): 
+                #     if args.encoder == 'True':
+                #         config.encoder == 'True'
+                #         v.requires_grad=True
+                #     elif args.encoder == 'False':
+                #         v.requires_grad=False
+                # if ('decoder' in k): #or ('decoder' in k): 
+                #     if args.decoder == 'True':
+                #         v.requires_grad=True
+                #     elif args.decoder == 'False':
+                #         v.requires_grad=False
+        fafmodule.optimizer = optim.Adam(filter(lambda p: p.requires_grad, fafmodule.model.parameters()), lr=args.lr)
+        # tbwriter.add_graph(FaFMIMONet_256_32_32(config))
 
     if args.mode == 'train':
 
@@ -313,7 +380,22 @@ def main_worker(rank, world_size, config, config_global, args):
         indices = list(range(n_train))
         data_cache = {}
         for epoch in range(start_epoch, num_epochs + 1):
-            # trainset.seq_dict[0] = trainset.get_data_dict(trainset.dataset_root_peragent)
+            # latency_num = int((epoch - 100) / 10) + 1
+
+            if epoch < 100:
+                latency_num = 0
+                latency_lambda = [latency_num,  latency_num, latency_num, latency_num, latency_num]
+                trainset.latency_lambda = latency_lambda
+            elif (epoch < 200):
+                latency_num = int((epoch - 100) / 10) + 1
+                latency_lambda = [latency_num,  latency_num, latency_num, latency_num, latency_num]
+                trainset.latency_lambda = latency_lambda
+            else: 
+                latency_lambda = args.latency_lambda
+                latency_lambda = [int(np.ceil(np.random.exponential(latency_lambda[0]))), int(np.ceil(np.random.exponential(latency_lambda[1]))), int(np.ceil(np.random.exponential(latency_lambda[2]))), int(np.ceil(np.random.exponential(latency_lambda[3]))), int(np.ceil(np.random.exponential(latency_lambda[4])))]
+                trainset.latency_lambda = latency_lambda
+            
+            trainset.seq_dict[0] = trainset.get_data_dict(trainset.dataset_root_peragent)
             if config.MGDA:
                 lr = fafmodule.optimizer_head.param_groups[0]['lr']
             else:
@@ -325,8 +407,10 @@ def main_worker(rank, world_size, config, config_global, args):
                 saver.flush()
 
             running_loss_disp = AverageMeter('Total loss', ':.6f')  # for motion prediction error
-            running_loss_class = AverageMeter('classification Loss', ':.6f')  # for cell classification error
+            running_loss_class = AverageMeter('classifieion Loss', ':.6f')  # for cell classification error
             running_loss_loc = AverageMeter('Localization Loss', ':.6f')  # for state estimation error
+            if config.forecast_loss == 'True':
+                running_loss_fore = AverageMeter('Forecast Loss', ':.6f')  # for forecast estimation error
 
             if config.MGDA:
                 fafmodule.scheduler_encoder.step()
@@ -336,6 +420,20 @@ def main_worker(rank, world_size, config, config_global, args):
             else:
                 fafmodule.scheduler.step()
                 fafmodule.model.train()
+                # fafmodule.model.eval()
+                if "decoder" in untrainable_list:
+                    fafmodule.model.module.decoder.eval()
+                if "encoder" in untrainable_list:
+                    fafmodule.model.module.u_encoder.eval()
+                if "adafusion" in untrainable_list:
+                    fafmodule.model.module.adafusion.eval()
+                if "regression" in untrainable_list:
+                    fafmodule.model.module.decoder.eval()
+                if "classification" in untrainable_list:
+                    fafmodule.model.module.decoder.eval()
+                if "forecast" in untrainable_list:
+                    fafmodule.model.module.decoder.eval()
+                    
             step_ct = 1
             t = time.time()
 
@@ -363,6 +461,9 @@ def main_worker(rank, world_size, config, config_global, args):
                 padded_voxel_points3, padded_voxel_points_teacher3, label_one_hot3, reg_target3, reg_loss_mask3, anchors_map3, vis_maps3, target_agent_id3, num_sensor3, trans_matrices3, filename3, current_pose_rec3, current_cs_rec3 = sample[3]['padded_voxel_points'] ,sample[3]['padded_voxel_points_teacher'] ,sample[3]['label_one_hot'] ,sample[3]['reg_target'] ,sample[3]['reg_loss_mask'] ,sample[3]['anchors_map'] ,sample[3]['vis_maps'] ,sample[3]['target_agent_id'] ,sample[3]['num_sensor'] ,sample[3]['trans_matrices'], sample[3]['filename'], sample[3]['current_pose_rec'], sample[3]['current_cs_rec']
                 padded_voxel_points4, padded_voxel_points_teacher4, label_one_hot4, reg_target4, reg_loss_mask4, anchors_map4, vis_maps4, target_agent_id4, num_sensor4, trans_matrices4, filename4, current_pose_rec4, current_cs_rec4 = sample[4]['padded_voxel_points'] ,sample[4]['padded_voxel_points_teacher'] ,sample[4]['label_one_hot'] ,sample[4]['reg_target'] ,sample[4]['reg_loss_mask'] ,sample[4]['anchors_map'] ,sample[4]['vis_maps'] ,sample[4]['target_agent_id'] ,sample[4]['num_sensor'] ,sample[4]['trans_matrices'], sample[4]['filename'], sample[4]['current_pose_rec'], sample[4]['current_cs_rec']
                 center_agent = sample['center_agent']
+
+                supervise_data = sample['supervise']
+                
                 time_t1 = time.time()
                 # print("计时点1", time_t1 - time_t0)
                 current_pose_rec_list = [current_pose_rec0, current_pose_rec1, current_pose_rec2, current_pose_rec3, current_pose_rec4]
@@ -416,6 +517,8 @@ def main_worker(rank, world_size, config, config_global, args):
                 data['target_agent_ids'] = target_agent_ids.cuda(rank, non_blocking=True)
                 data['num_agent'] = num_agent.cuda(rank, non_blocking=True)
                 data['trans_matrices'] = trans_matrices
+                data['supervise'] = supervise_data
+                data['teacher'] = padded_voxel_points_teacher0
                 time_8 = time.time()
                 time_c = time_8- time_10
                 time_t5 = time.time()
@@ -433,10 +536,18 @@ def main_worker(rank, world_size, config, config_global, args):
                 if config.KD:
                     loss, cls_loss, loc_loss,kd_loss = fafmodule.step(data, batch_size, center_agent)
                 else:
-                    loss, cls_loss, loc_loss = fafmodule.step(data, batch_size, center_agent, forecast_num, rank)
+                    if config.forecast_loss == 'True' and config.forecast_KD == 'False':
+                        loss, cls_loss, loc_loss, fore_loss = fafmodule.step(data, batch_size, center_agent, forecast_num, rank,config)
+                    elif config.forecast_loss == 'True' and config.forecast_KD == 'True':
+                        loss, cls_loss, loc_loss, fore_loss, kd_loss = fafmodule.step(data, batch_size, center_agent, forecast_num, rank,config)
+                    else:
+                        loss, cls_loss, loc_loss = fafmodule.step(data, batch_size, center_agent, forecast_num, rank,config)
+                        
                 running_loss_disp.update(loss)
                 running_loss_class.update(cls_loss)
                 running_loss_loc.update(loc_loss)
+                if config.forecast_loss == 'True':
+                    running_loss_fore.update(fore_loss)
                 time_10 = time.time()
                 print("total_time:", time_10 - time_9)
                 step_ct += 1
@@ -444,16 +555,27 @@ def main_worker(rank, world_size, config, config_global, args):
                 print("Running total loss: {}".format(running_loss_disp.avg))
                 print("Running total cls loss: {}".format(running_loss_class.avg))
                 print("Running total loc loss: {}".format(running_loss_loc.avg))
-
-            print("{}\t{}\t{}\t Takes {} s\n".format(running_loss_disp, running_loss_class, running_loss_loc,
+                if config.forecast_KD == 'True':
+                    print("Running total KD loss: {}".format(kd_loss))
+                if config.forecast_loss == 'True':
+                    print("Running total fore loss: {}".format(running_loss_fore.avg))
+            tbwriter.add_scalar('total_loss', running_loss_disp.avg)
+            tbwriter.add_scalar('total_loss', running_loss_class.avg)
+            tbwriter.add_scalar('total_loss', running_loss_loc.avg)
+            if config.forecast_loss == 'True':
+                tbwriter.add_scalar('total_loss', running_loss_fore.avg)
+            if config.forecast_loss == 'True':
+                print("{}\t{}\t{}\t{}\t  Takes {} s\n".format(running_loss_disp, running_loss_class, running_loss_loc,running_loss_fore,
                                                      str(time.time() - t)))
+            else:
+                print("{}\t{}\t{}\t  Takes {} s\n".format(running_loss_disp, running_loss_class, running_loss_loc, str(time.time() - t)))
 
             # save model
-            if need_log and rank == 0:
+            if need_log and rank == 0 and epoch % 5 == 0:
                 if config.KD:
                     saver.write("{}\t{}\t{}\tkd loss:{} Take {} s\n".format(running_loss_disp,running_loss_class,running_loss_loc,kd_loss,str(time.time()-t)))
                 else:
-                    saver.write("{}\t{}\t{}\tTake {} s\n".format(running_loss_disp,running_loss_class,running_loss_loc,str(time.time()-t)))
+                    saver.write("{}\t{}\t{}\t{}\tTake {} s\n".format(running_loss_disp,running_loss_class,running_loss_loc,running_loss_fore, str(time.time()-t)))
 
                 saver.flush()
                 if config.MGDA:

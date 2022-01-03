@@ -13,6 +13,9 @@ def convert_format(boxes_array):
     :param array: an array of shape [# bboxs, 4, 2]
     :return: a shapely.geometry.Polygon object
     """
+    # for box in boxes_array:
+    #     print(box)
+
 
     polygons = [Polygon([(box[i, 0], box[i, 1]) for i in range(4)]) for box in boxes_array]
     return np.array(polygons)

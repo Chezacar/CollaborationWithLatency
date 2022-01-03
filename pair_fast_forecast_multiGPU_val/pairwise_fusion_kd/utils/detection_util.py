@@ -457,7 +457,7 @@ def cal_local_mAP(config, data, det_results, annotations):
             det_results.append(det_results_multiclass)
             annotations.append(annotation_frame)
 
-    return det_results, annotations
+    return det_results, annotations, det_results_multiclass, annotation_frame
 
 
 def cal_global_mAP(config, data, det_results, annotations):
@@ -533,7 +533,7 @@ def cal_global_mAP(config, data, det_results, annotations):
     return det_results, annotations
 
 
-def visualization(config, data, savename=None):
+def visualization(config, data, savename=None, map_result_0_5 = 0, map_result_0_7 = 0):
     voxel_size = config.voxel_size
     area_extents = config.area_extents
     anchor_size = config.anchor_size
@@ -656,6 +656,9 @@ def visualization(config, data, savename=None):
     m[m == 0] = 0.99
     m[m == 1] = 0.5
     maps = (m * 255).astype(np.uint8)
+    maps = maps.reshape(256,256,3)
+    plt.text(1, -15, "local results@iou0.5: " + str(int(map_result_0_5 * 100)) + "%")
+    plt.text(1, -5, "local results@iou0.7: " + str(int(map_result_0_7 * 100)) + "%")
     plt.imshow(maps, zorder=0)
     if not savename is None:
         plt.savefig(savename)

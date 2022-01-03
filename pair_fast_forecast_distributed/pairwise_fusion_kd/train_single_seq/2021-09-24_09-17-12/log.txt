@@ -1,6 +1,0 @@
-command line: train_faf_com_kd_distributed.py --data /DATA_SSD/slren/dataset_warp_kd/train --logpath /GPFS/data/zxlei/CollaborativePerception/Forcast/LatencyVersion/pair_fast_forecast_distributed/pairwise_fusion_kd --mode train --lr 0.001 --batch 12 --nepoch 150 --binary 1 --world_size 3 --log
-Namespace(batch=12, binary=True, data='/DATA_SSD/slren/dataset_warp_kd/train', forecast_num=4, gpu=2, kd=100000, layer=3, log=True, logname=None, logpath='/GPFS/data/zxlei/CollaborativePerception/Forcast/LatencyVersion/pair_fast_forecast_distributed/pairwise_fusion_kd', lr=0.001, mode='train', model_only=False, nepoch=150, ngpus_per_node=2, nworker=0, only_det=True, rank=0, resume='', resume_teacher='/DATA_SSD/slren/teacher_aug_batch_4_epoch_100.pth', visualization=True, world_size=3)
-
-epoch: 1, lr: 0.001	Total loss 44107.332031 (43820.316921)	classification Loss 539.466980 (867.807373)	Localization Loss 43567.863281 (42952.509603)	Take 2343.3581235408783 s
-epoch: 2, lr: 0.001	Total loss 41950.281250 (34382.719738)	classification Loss 519.431641 (538.611761)	Localization Loss 41430.851562 (33844.108049)	Take 2369.6337292194366 s
-epoch: 3, lr: 0.001	

@@ -332,7 +332,8 @@ class CarscenesDataset(Dataset):
         for file_name in os.listdir(file_path):
             path_item = os.path.join(file_path, file_name).strip('/').split('/')
             scene_stamp, time_stamp = path_item[-1].split('_')
-            if int(time_stamp) >= 10:
+            # if int(time_stamp) >= 10:
+            if int(time_stamp) >= 10 and int(time_stamp) <= 40:
                 agent_id = int(path_item[-2][-1])
                 del path_item[-2:]
                 path_pre = '/'
@@ -344,7 +345,8 @@ class CarscenesDataset(Dataset):
                         file_dict[agent_id].append(os.path.join(file_path, file_name))
                     else:
                         # latency_list.append(np.ceil(np.random.exponential(latency_lambda[agent])))
-                        latency = int(np.ceil(np.random.exponential(latency_lambda[agent])))
+                        # latency = int(np.ceil(np.random.exponential(latency_lambda[agent])))
+                        latency = int(latency_lambda[agent])
                         delay_time_stamp = int(time_stamp) - latency
                         if delay_time_stamp <= 0:
                             delay_time_stamp = 0
@@ -414,6 +416,7 @@ class CarscenesDataset(Dataset):
                 else:
                     data_return['trans_matrices'] = np.zeros((5, 4, 4))
                     data_return['padded_voxel_points'] = padded_voxel_points
+                    data_return['padded_voxel_points_teacher'] = padded_voxel_points
                     data_return['filename'] = seq_file
                     data_return['target_agent_id'] = 0
                     data_return['num_sensor'] = 0
@@ -424,7 +427,7 @@ class CarscenesDataset(Dataset):
                     cache['target_agent_id'] = 0
                     cache['num_sensor'] = 0
 
-                data_return['padded_voxel_points_teacher'] = padded_voxel_points
+
                 data_return['label_one_hot'] = label_one_hot
                 data_return['reg_target'] = reg_target
                 data_return['reg_loss_mask'] = reg_loss_mask
@@ -432,14 +435,6 @@ class CarscenesDataset(Dataset):
                 data_return['vis_maps'] = vis_maps
                 data_return['gt_max_iou'] = [{"gt_box": [[0, 0, 0, 0], [0, 0, 0, 0]]}]
                     
-                    # cache['padded_voxel_points_teacher'] = padded_voxel_points
-                    # cache['label_one_hot'] = label_one_hot
-                    # cache['reg_target'] = reg_target
-                    # cache['reg_loss_mask'] = reg_loss_mask
-                    # cache['anchors_map'] = anchors_map
-                    # cache['vis_maps'] = vis_maps
-                    # cache['gt_max_iou'] = [{"gt_box": [[0, 0, 0, 0], [0, 0, 0, 0]]}]
-                    # data_return['trans_matrices'] = np.zeros((5, 4, 4)) 
             else:
                 gt_dict = gt_data_handle.item()
                 # if len(self.cache) < self.cache_size:
@@ -511,6 +506,7 @@ class CarscenesDataset(Dataset):
                 if not self.val:
                     padded_voxel_points_teacher = list()
                     indices_teacher = gt_dict['voxel_indices_teacher']
+                    # indices_teacher = gt_dict['voxel_indices_0']
                     curr_voxels_teacher = np.zeros(self.dims, dtype=np.bool)
                     curr_voxels_teacher[indices_teacher[:, 0], indices_teacher[:, 1], indices_teacher[:, 2]] = 1
                     curr_voxels_teacher = np.rot90(curr_voxels_teacher, 3)
@@ -566,7 +562,7 @@ class CarscenesDataset(Dataset):
                     # data_return['anchors_map_global'] = anchors_map_global
                     # data_return['gt_max_iou_global'] = [{"gt_box_global": gt_max_iou_global}]
                     data_return['trans_matrices_map'] = trans_matrices_map
-
+                    data_return['padded_voxel_points_teacher'] = padded_voxel_points
                     # cache['padded_voxel_points'] = padded_voxel_points
                     # cache['label_one_hot'] = label_one_hot
                     # cache['reg_target'] = reg_target
@@ -600,7 +596,7 @@ class CarscenesDataset(Dataset):
                     
                 # if write_flag == True:
                 if not self.val:
-                    data_return['padded_voxel_points_teacher'] = padded_voxel_points
+                    data_return['padded_voxel_points_teacher'] = padded_voxel_points_teacher
                     data_return['label_one_hot'] = label_one_hot
                     data_return['reg_target'] = reg_target
                     data_return['reg_loss_mask'] = reg_loss_mask
@@ -725,18 +721,29 @@ class CarscenesDataset(Dataset):
     #         filename_str += file
     #         filename_str += ','
     #     data_return['filename'] = filename_str.strip(',')
+    def process_supervise_data(self, raw_data):
+        process_data = {}
+        process_data['bev_seq'] = []
+        process_data['trans_matrices'] = []
+        for i in range(len(raw_data)):
+            process_data['bev_seq'].append(raw_data[i]['padded_voxel_points'])
+            process_data['trans_matrices'].append(raw_data[i]['trans_matrices'])
+        process_data['bev_seq'] = np.stack(tuple(process_data['bev_seq']), 0)
+        process_data['trans_matrices'] = np.stack(tuple(process_data['trans_matrices']), 0)
+        return process_data
+
 
     def __getitem__(self, idx):
         time_start = time.time()
         # if idx in self.cache:
         #     gt_dict = self.cache[idx]
         # else:
-        if idx == 0:        
-            self.seq_dict = {}
-            # for agent_num in range(self.num_agent):
-            for agent_num in range(1):
-                self.dataset_root_peragent = self.dataset_root + '/agent0'
-                self.seq_dict[agent_num] = self.get_data_dict(self.dataset_root_peragent)
+        # if idx == 0:        
+        #     self.seq_dict = {}
+        #     # for agent_num in range(self.num_agent):
+        #     for agent_num in range(1):
+        #         self.dataset_root_peragent = self.dataset_root + '/agent0'
+        #         self.seq_dict[agent_num] = self.get_data_dict(self.dataset_root_peragent)
         time_2 = time.time()
         # try:
         #     print('迭代时间:',time_2 - self.time_4)
@@ -774,11 +781,14 @@ class CarscenesDataset(Dataset):
         time_pas = time.time()
         workers = len(self.latency_lambda * self.forecast_num)
         # res = [None for _ in range(workers)]
+        # print(sorted(load_list))
         with futures.ThreadPoolExecutor(None) as executor:
             # for i in range(workers):
             #     res[i] = executor.submit(self.per_scene_load, load_list[i])
             res = executor.map(self.per_scene_load, sorted(load_list), chunksize=workers)
             res = list(res)
+        
+
         # res = []
         # for para_item in load_list:
         #     res.append(self.per_scene_load(para_item))
@@ -896,6 +906,26 @@ class CarscenesDataset(Dataset):
         # self.cache[idx] = data_return   
         self.time_4 = time.time()
         # print('后处理部分:',self.time_4-time_3)
+
+
+        ### 下面开始load监督
+        if not self.val:
+            supervise_load_list = []
+            # newest_id = 
+            scene_time_index = self.seq_dict[0][self.center_agent][idx].split('/')[-1]
+            for i in range(len(self.latency_lambda)):
+                path2load = self.dataset_root + '/agent' + str(i) + '/' + scene_time_index
+                supervise_load_list.append([i, -1, path2load])
+
+
+            with futures.ThreadPoolExecutor(None) as executor:
+                # for i in range(workers):
+                #     res[i] = executor.submit(self.per_scene_load, load_list[i])
+                res = executor.map(self.per_scene_load, sorted(supervise_load_list), chunksize=workers)
+                res = list(res)
+
+            data_return['supervise']= self.process_supervise_data(res)
+
 
         # print("一个item读取运行时间:",time.time() - time_start )
         return data_return

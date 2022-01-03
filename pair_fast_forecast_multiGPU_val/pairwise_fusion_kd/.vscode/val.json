@@ -1,0 +1,51 @@
+{
+    // 使用 IntelliSense 了解相关属性。 
+    // 悬停以查看现有属性的描述。
+    // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: train_faf_com_kd.py",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "args": [
+                "--mode",
+                "val",
+                "--data",
+                "/GPFS/data/zxlei/dataset/test1/val",
+                "--logpath",
+                "/GPFS/data/zxlei/CollaborativePerception/Forcast/LatencyVersion/pairwise_fast/pairwise_fusion_kd/log",
+                "--batch",
+                "1",
+                "--nepoch",
+                "200",
+                "--layer",
+                "3",
+                "--forecast_num",
+                "3",
+                "--forecast_model",
+                // "Baseline",
+                "MotionLSTM",
+                // "--logname",
+                // "pairwise_layer3_wf_distributed_latency10_33epoch",
+                "--resume",
+                "/GPFS/data/zxlei/CollaborativePerception/Forcast/LatencyVersion/pair_fast_forecast_distributed/pairwise_fusion_kd/log/MotionLSTM/12141721/epoch_170.pth"
+                // "/GPFS/data/zxlei/CollaborativePerception/Forcast/LatencyVersion/pair_fast_forecast_distributed/pairwise_fusion_kd/log/baseline/newraw/epoch_100.pth",
+                // "/GPFS/data/zxlei/CollaborativePerception/Forcast/LatencyVersion/pair_fast_forecast_distributed/pairwise_fusion_kd/log/lstm_l10_f3/11182230/epoch_175.pth",
+                // "/DB/rhome/slren/data_gpfs/log/train_single_seq/2021-09-05_22-06-09/epoch_100.pth",
+                // "/GPFS/data/zxlei/CollaborativePerception/Forcast/LatencyVersion/pair_fast_forecast_distributed/pairwise_fusion_kd/log/motionNet_l5_f3/epoch_210.pth",
+                // "/GPFS/data/zxlei/CollaborativePerception/Forcast/LatencyVersion/pair_fast_forecast_distributed/pairwise_fusion_kd/log/epoch_200.pth",
+                // "/GPFS/data/zxlei/CollaborativePerception/Forcast/LatencyVersion/pair_fast_forecast_distributed/pairwise_fusion_kd/log/latency5forecast1/train_single_seq/2021-10-15_12-03-24/epoch_150.pth"
+                // "--latency_lambda",
+                // "5 5 5 5 5",
+                // "--binary",
+                // "1"//,
+                // "--resume_teacher",
+                // "/DATA_SSD/slren/teacher_aug_batch_4_epoch_100.pth"
+            ],
+            "env": {"CUDA_VISIBLE_DEVICES": "2"}
+        }
+    ]
+}

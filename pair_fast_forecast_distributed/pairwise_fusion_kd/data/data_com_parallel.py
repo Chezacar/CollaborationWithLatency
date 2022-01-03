@@ -1,5 +1,5 @@
 import concurrent
-from nuscenes.utils.data_classes import LidarPointCloud
+
 from numpy.lib.npyio import load
 from data.obj_util import *
 from torch.utils.data import Dataset
@@ -13,7 +13,6 @@ from data.config_com import Config, ConfigGlobal
 from matplotlib import pyplot as plt
 import cv2
 from concurrent import futures
-from nuscenes.utils.geometry_utils import view_points, transform_matrix
 
 def process_one(para):
     [key, agent, dict] = para
@@ -333,7 +332,8 @@ class CarscenesDataset(Dataset):
         for file_name in os.listdir(file_path):
             path_item = os.path.join(file_path, file_name).strip('/').split('/')
             scene_stamp, time_stamp = path_item[-1].split('_')
-            if int(time_stamp) >= 10:
+            # if int(time_stamp) >= 10:
+            if int(time_stamp) >= 10 and int(time_stamp) < 40:
                 agent_id = int(path_item[-2][-1])
                 del path_item[-2:]
                 path_pre = '/'
@@ -345,7 +345,9 @@ class CarscenesDataset(Dataset):
                         file_dict[agent_id].append(os.path.join(file_path, file_name))
                     else:
                         # latency_list.append(np.ceil(np.random.exponential(latency_lambda[agent])))
-                        latency = int(np.ceil(np.random.exponential(latency_lambda[agent])))
+                        # latency = int(np.ceil(np.random.exponential(latency_lambda[agent])))
+                        latency = int(latency_lambda[agent])
+                        # print('latency of this epoch is', latency_lambda)
                         delay_time_stamp = int(time_stamp) - latency
                         if delay_time_stamp <= 0:
                             delay_time_stamp = 0
@@ -390,10 +392,10 @@ class CarscenesDataset(Dataset):
                     data_return['target_agent_id'] = 0
                     data_return['num_sensor'] = 0
                     data_return['trans_matrices'] = np.zeros((5, 4, 4))
-                    data_return['padded_voxel_points_global'] = 0
-                    data_return['reg_target_global'] = 0
-                    data_return['anchors_map_global'] = 0
-                    data_return['gt_max_iou_global'] = 0
+                    # data_return['padded_voxel_points_global'] = 0
+                    # data_return['reg_target_global'] = 0
+                    # data_return['anchors_map_global'] = 0
+                    # data_return['gt_max_iou_global'] = 0
                     data_return['trans_matrices_map'] = 0
                     
                     # cache['padded_voxel_points'] = (padded_voxel_points)
@@ -512,6 +514,7 @@ class CarscenesDataset(Dataset):
                 if not self.val:
                     padded_voxel_points_teacher = list()
                     indices_teacher = gt_dict['voxel_indices_teacher']
+                    # indices_teacher = gt_dict['voxel_indices_0']
                     curr_voxels_teacher = np.zeros(self.dims, dtype=np.bool)
                     curr_voxels_teacher[indices_teacher[:, 0], indices_teacher[:, 1], indices_teacher[:, 2]] = 1
                     curr_voxels_teacher = np.rot90(curr_voxels_teacher, 3)
@@ -519,33 +522,38 @@ class CarscenesDataset(Dataset):
                     padded_voxel_points_teacher = np.stack(padded_voxel_points_teacher, 0).astype(np.float32)
                     padded_voxel_points_teacher = padded_voxel_points_teacher.astype(np.float32)
                 if self.val:
-                    trans_matrices_map = gt_dict['trans_matrices_map']
-                    padded_voxel_points_global = list()
-                    indices_global = gt_dict['voxel_indices_global']
-                    curr_voxels_global = np.zeros(self.dims_global, dtype=np.bool)
-                    curr_voxels_global[indices_global[:, 0], indices_global[:, 1], indices_global[:, 2]] = 1
-                    curr_voxels_global = np.rot90(curr_voxels_global, 3)
-                    padded_voxel_points_global.append(curr_voxels_global)
-                    padded_voxel_points_global = np.stack(padded_voxel_points_global, 0).astype(np.float32)
-                    padded_voxel_points_global = padded_voxel_points_global.astype(np.float32)
-                    allocation_mask_global = gt_dict['allocation_mask_global'].astype(np.bool)
-                    reg_loss_mask_global = gt_dict['reg_loss_mask_global'].astype(np.bool)
-                    gt_max_iou_global = gt_dict['gt_max_iou_global']
-                    # load regression target
-                    reg_target_sparse_global = gt_dict['reg_target_sparse_global']
-                    # need to be modified Yiqi , only use reg_target and allocation_map
-                    if target_agent_id == 0:
-                        reg_target_global = np.zeros(self.reg_target_shape_global).astype(reg_target_sparse_global.dtype)
-                    else:
-                        reg_target_global = np.zeros(self.reg_target_shape).astype(reg_target_sparse_global.dtype)
-                    reg_target_global[allocation_mask_global] = reg_target_sparse_global
-                    reg_target_global[np.bitwise_not(reg_loss_mask_global)] = 0
-                    if self.only_det:
-                        reg_target_global = reg_target_global[:, :, :, :1]
-                        reg_loss_mask_global = reg_loss_mask_global[:, :, :, :1]
-                    reg_target_global = reg_target_global.astype(np.float32)
-                    anchors_map_global = self.anchors_map_global
-                    anchors_map_global = anchors_map_global.astype(np.float32)
+                    trans_matrices_map = gt_dict['trans_matrices']
+                    # padded_voxel_points_global = list()
+                    # indices_global = gt_dict['voxel_indices_global']
+                    # curr_voxels_global = np.zeros(self.dims_global, dtype=np.bool)
+                    # curr_voxels_global[indices_global[:, 0], indices_global[:, 1], indices_global[:, 2]] = 1
+                    # curr_voxels_global = np.rot90(curr_voxels_global, 3)
+                    # padded_voxel_points_global.append(curr_voxels_global)
+                    # padded_voxel_points_global = np.stack(padded_voxel_points_global, 0).astype(np.float32)
+                    # padded_voxel_points_global = padded_voxel_points_global.astype(np.float32)
+
+
+                    # allocation_mask_global = gt_dict['allocation_mask_global'].astype(np.bool)
+                    # reg_loss_mask_global = gt_dict['reg_loss_mask_global'].astype(np.bool)
+                    # gt_max_iou_global = gt_dict['gt_max_iou_global']
+                    # # load regression target
+                    # # reg_target_sparse_global = gt_dict['reg_target_sparse_global']
+                    # reg_target_sparse_global = gt_dict['reg_target_sparse']
+                    # # need to be modified Yiqi , only use reg_target and allocation_map
+                    # reg_target_global = np.zeros(self.reg_target_shape_global).astype(reg_target_sparse_global.dtype)
+                    # # if target_agent_id == 0:
+                    # #     reg_target_global = np.zeros(self.reg_target_shape_global).astype(reg_target_sparse_global.dtype)
+                    # # else:
+                    # #     reg_target_global = np.zeros(self.reg_target_shape).astype(reg_target_sparse_global.dtype)
+
+                    # reg_target_global[allocation_mask_global] = reg_target_sparse_global
+                    # reg_target_global[np.bitwise_not(reg_loss_mask_global)] = 0
+                    # if self.only_det:
+                    #     reg_target_global = reg_target_global[:, :, :, :1]
+                    #     reg_loss_mask_global = reg_loss_mask_global[:, :, :, :1]
+                    # reg_target_global = reg_target_global.astype(np.float32)
+                    # anchors_map_global = self.anchors_map_global
+                    # anchors_map_global = anchors_map_global.astype(np.float32)
                     data_return['padded_voxel_points'] = padded_voxel_points
                     data_return['label_one_hot'] = label_one_hot
                     data_return['reg_target'] = reg_target
@@ -557,10 +565,10 @@ class CarscenesDataset(Dataset):
                     data_return['target_agent_id'] = target_agent_id
                     data_return['num_sensor'] = num_sensor
                     data_return['trans_matrices'] = trans_matrices
-                    data_return['padded_voxel_points_global'] = padded_voxel_points_global
-                    data_return['reg_target_global'] = reg_target_global
-                    data_return['anchors_map_global'] = anchors_map_global
-                    data_return['gt_max_iou_global'] = [{"gt_box_global": gt_max_iou_global}]
+                    # data_return['padded_voxel_points_global'] = padded_voxel_points_global
+                    # data_return['reg_target_global'] = reg_target_global
+                    # data_return['anchors_map_global'] = anchors_map_global
+                    # data_return['gt_max_iou_global'] = [{"gt_box_global": gt_max_iou_global}]
                     data_return['trans_matrices_map'] = trans_matrices_map
 
                     # cache['padded_voxel_points'] = padded_voxel_points
@@ -595,13 +603,14 @@ class CarscenesDataset(Dataset):
                     # cache['trans_matrices'] = trans_matrices
                     
                 # if write_flag == True:
-                data_return['padded_voxel_points_teacher'] = padded_voxel_points_teacher
-                data_return['label_one_hot'] = label_one_hot
-                data_return['reg_target'] = reg_target
-                data_return['reg_loss_mask'] = reg_loss_mask
-                data_return['anchors_map'] = anchors_map
-                data_return['vis_maps'] = vis_maps
-                data_return['gt_max_iou'] = [{"gt_box": [[0, 0, 0, 0], [0, 0, 0, 0]]}]
+                if not self.val:
+                    data_return['padded_voxel_points_teacher'] = padded_voxel_points_teacher
+                    data_return['label_one_hot'] = label_one_hot
+                    data_return['reg_target'] = reg_target
+                    data_return['reg_loss_mask'] = reg_loss_mask
+                    data_return['anchors_map'] = anchors_map
+                    data_return['vis_maps'] = vis_maps
+                    data_return['gt_max_iou'] = [{"gt_box": [[0, 0, 0, 0], [0, 0, 0, 0]]}]
 
                     # cache['padded_voxel_points_teacher'] = padded_voxel_points_teacher
                     # cache['label_one_hot'] = label_one_hot
@@ -720,18 +729,29 @@ class CarscenesDataset(Dataset):
     #         filename_str += file
     #         filename_str += ','
     #     data_return['filename'] = filename_str.strip(',')
+    def process_supervise_data(self, raw_data):
+        process_data = {}
+        process_data['bev_seq'] = []
+        process_data['trans_matrices'] = []
+        for i in range(len(raw_data)):
+            process_data['bev_seq'].append(raw_data[i]['padded_voxel_points'])
+            process_data['trans_matrices'].append(raw_data[i]['trans_matrices'])
+        process_data['bev_seq'] = np.stack(tuple(process_data['bev_seq']), 0)
+        process_data['trans_matrices'] = np.stack(tuple(process_data['trans_matrices']), 0)
+        return process_data
+
 
     def __getitem__(self, idx):
         time_start = time.time()
         # if idx in self.cache:
         #     gt_dict = self.cache[idx]
         # else:
-        if idx == 0:        
-            self.seq_dict = {}
-            # for agent_num in range(self.num_agent):
-            for agent_num in range(1):
-                self.dataset_root_peragent = self.dataset_root + '/agent0'
-                self.seq_dict[agent_num] = self.get_data_dict(self.dataset_root_peragent)
+        # if idx == 0:        
+        #     self.seq_dict = {}
+        #     # for agent_num in range(self.num_agent):
+        #     for agent_num in range(1):
+        #         self.dataset_root_peragent = self.dataset_root + '/agent0'
+        #         self.seq_dict[agent_num] = self.get_data_dict(self.dataset_root_peragent)
         time_2 = time.time()
         # try:
         #     print('迭代时间:',time_2 - self.time_4)
@@ -774,6 +794,8 @@ class CarscenesDataset(Dataset):
             #     res[i] = executor.submit(self.per_scene_load, load_list[i])
             res = executor.map(self.per_scene_load, sorted(load_list), chunksize=workers)
             res = list(res)
+        
+
         # res = []
         # for para_item in load_list:
         #     res.append(self.per_scene_load(para_item))
@@ -782,22 +804,22 @@ class CarscenesDataset(Dataset):
             data_return[agent] = {}
             if self.val:
                 data_return[agent]['padded_voxel_points'] = []
-                data_return[agent]['label_one_hot'] = []
-                data_return[agent]['reg_target'] = []
-                data_return[agent]['reg_loss_mask'] = []
-                data_return[agent]['anchors_map'] = []
-                data_return[agent]['vis_maps'] = []
-                data_return[agent]['gt_max_iou'] = []
                 data_return[agent]['filename'] =  []
                 data_return[agent]['target_agent_id'] = []
                 data_return[agent]['num_sensor'] = []
                 data_return[agent]['trans_matrices'] = []
                 data_return[agent]['current_pose_rec'] = []
                 data_return[agent]['current_cs_rec'] = []
-                data_return[agent]['padded_voxel_points_global'] = []
-                data_return[agent]['reg_target_global'] = []
-                data_return[agent]['anchors_map_global'] = []
-                data_return[agent]['gt_max_iou_global'] = []
+                # data_return[agent]['label_one_hot'] = []
+                # data_return[agent]['reg_target'] = []
+                # data_return[agent]['reg_loss_mask'] = []
+                # data_return[agent]['anchors_map'] = []
+                # data_return[agent]['vis_maps'] = []
+                # data_return[agent]['gt_max_iou'] = []
+                # data_return[agent]['padded_voxel_points_global'] = []
+                # data_return[agent]['reg_target_global'] = []
+                # data_return[agent]['anchors_map_global'] = []
+                # data_return[agent]['gt_max_iou_global'] = []
                 data_return[agent]['trans_matrices_map'] = []
             else:
                 # return padded_voxel_points, padded_voxel_points_teacher, label_one_hot, reg_target, reg_loss_mask, anchors_map, vis_maps, \
@@ -815,22 +837,31 @@ class CarscenesDataset(Dataset):
                 # if load_list[agent * self.forecast_num + iter][0] not in self.cache.keys():
                 #     self.cache[load_list[agent * self.forecast_num + iter][2]] = temp
                 if self.val:
-                    data_return[agent]['padded_voxel_points'].append(temp[agent]['padded_voxel_points'])
-                    data_return[agent]['label_one_hot'].append(temp[agent]['label_one_hot'])
-                    data_return[agent]['reg_target'].append(temp[agent]['reg_target'])
-                    data_return[agent]['reg_loss_mask'].append(temp[agent]['reg_loss_mask'])
-                    data_return[agent]['anchors_map'].append(temp[agent]['anchors_map'])
-                    data_return[agent]['vis_maps'].append(temp[agent]['vis_maps'])
-                    data_return[agent]['gt_max_iou'].append(temp[agent]['gt_max_iou'])
-                    data_return[agent]['filename'].append(temp[agent]['filename'])
-                    data_return[agent]['target_agent_id'].append(temp[agent]['target_agent_id'])
-                    data_return[agent]['num_sensor'].append(temp[agent]['num_sensor'])
-                    data_return[agent]['trans_matrices'].append(temp[agent]['trans_matrices'])
-                    data_return[agent]['padded_voxel_points_global'].append(temp[agent]['padded_voxel_points_global'])
-                    data_return[agent]['reg_target_global'].append(temp[agent]['reg_target_global'])
-                    data_return[agent]['anchors_map_global'].append(temp[agent]['anchors_map_global'])
-                    data_return[agent]['gt_max_iou_global'].append(temp[agent]['gt_max_iou_global'])
-                    data_return[agent]['trans_matrices_map'].append(temp[agent]['trans_matrices_map'])
+                    data_return[agent]['padded_voxel_points'].append(temp['padded_voxel_points'])
+                    data_return[agent]['filename'].append(temp['filename'])
+                    data_return[agent]['target_agent_id'].append(temp['target_agent_id'])
+                    data_return[agent]['num_sensor'].append(temp['num_sensor'])
+                    data_return[agent]['trans_matrices'].append(temp['trans_matrices'])
+                    data_return[agent]['current_pose_rec'].append(temp['current_pose_rec'])
+                    data_return[agent]['current_cs_rec'].append(temp['current_cs_rec'])
+                    # data_return[agent]['label_one_hot'].append(temp['label_one_hot'])
+                    # data_return[agent]['reg_target'].append(temp['reg_target'])
+                    # data_return[agent]['reg_loss_mask'].append(temp['reg_loss_mask'])
+                    # data_return[agent]['anchors_map'].append(temp['anchors_map'])
+                    # data_return[agent]['vis_maps'].append(temp['vis_maps'])
+                    # data_return[agent]['gt_max_iou'].append(temp['gt_max_iou'])
+                    if iter ==self.forecast_num - 1:
+                        data_return[agent]['label_one_hot'] = temp['label_one_hot']
+                        data_return[agent]['reg_target'] = temp['reg_target']
+                        data_return[agent]['reg_loss_mask'] = temp['reg_loss_mask']
+                        data_return[agent]['anchors_map'] = temp['anchors_map']
+                        data_return[agent]['vis_maps'] = temp['vis_maps']
+                        data_return[agent]['gt_max_iou'] = temp['gt_max_iou']
+                    # data_return[agent]['padded_voxel_points_global'].append(temp[agent]['padded_voxel_points_global'])
+                    # data_return[agent]['reg_target_global'].append(temp[agent]['reg_target_global'])
+                    # data_return[agent]['anchors_map_global'].append(temp[agent]['anchors_map_global'])
+                    # data_return[agent]['gt_max_iou_global'].append(temp[agent]['gt_max_iou_global'])
+                    data_return[agent]['trans_matrices_map'].append(temp['trans_matrices_map'])
                 else:
                     # return padded_voxel_points, padded_voxel_points_teacher, label_one_hot, reg_target, reg_loss_mask, anchors_map, vis_maps, \
                     #     target_agent_id, num_sensor, trans_matrices
@@ -841,7 +872,7 @@ class CarscenesDataset(Dataset):
                     data_return[agent]['trans_matrices'].append(temp['trans_matrices'])
                     data_return[agent]['current_pose_rec'].append(temp['current_pose_rec'])
                     data_return[agent]['current_cs_rec'].append(temp['current_cs_rec'])
-                    if iter == self.forecast_num - 1:
+                    if iter  == self.forecast_num - 1:
                         data_return[agent]['padded_voxel_points_teacher'] = temp['padded_voxel_points_teacher']
                         data_return[agent]['label_one_hot'] = temp['label_one_hot']
                         data_return[agent]['reg_target'] = temp['reg_target']
@@ -882,6 +913,25 @@ class CarscenesDataset(Dataset):
         # self.cache[idx] = data_return   
         self.time_4 = time.time()
         # print('后处理部分:',self.time_4-time_3)
+
+
+        ### 下面开始load监督
+        supervise_load_list = []
+        # newest_id = 
+        scene_time_index = self.seq_dict[self.center_agent][self.center_agent][idx].split('/')[-1]
+        for i in range(len(self.latency_lambda)):
+            path2load = self.dataset_root + '/agent' + str(i) + '/' + scene_time_index
+            supervise_load_list.append([i, -1, path2load])
+
+
+        with futures.ThreadPoolExecutor(None) as executor:
+            # for i in range(workers):
+            #     res[i] = executor.submit(self.per_scene_load, load_list[i])
+            res = executor.map(self.per_scene_load, sorted(supervise_load_list), chunksize=workers)
+            res = list(res)
+
+        data_return['supervise']= self.process_supervise_data(res)
+
 
         # print("一个item读取运行时间:",time.time() - time_start )
         return data_return

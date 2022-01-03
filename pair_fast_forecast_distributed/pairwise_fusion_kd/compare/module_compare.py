@@ -4,6 +4,8 @@ from numpy.testing._private.utils import tempdir
 import torch.nn.functional as F
 import torch.nn as nn
 import torch
+from data.config_com import Config
+from utils.model import lidar_encoder
 from utils.FaFModel import FaFNet,FaFMIMONet_512_16_16, FaFMIMONet_512_16_16_KD, FaFMIMONet_256_32_32, FaFMIMONet_256_32_32_KD, FaFMIMONet_128_64_64, \
 	FaFMIMONet_128_64_64_KD, FaFMIMONet_64_128_128,FaFMIMONet_32_256_256, FaFMIMONet_layer_3_and_4, FeatEncoder,FaFMGDA
 from utils.detection_util import *
@@ -25,6 +27,7 @@ class FaFModule(object):
 			self.scheduler_head = torch.optim.lr_scheduler.MultiStepLR(self.optimizer_head, milestones=[50, 100, 150, 200], gamma=0.5)
 			self.MGDA = config.MGDA
 		else:
+			self.encoder = lidar_encoder
 			self.model = model
 			self.optimizer = optimizer
 			self.scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[50, 100, 150, 200], gamma=0.5)
@@ -91,13 +94,13 @@ class FaFModule(object):
 		loss_num =0
 		# calculate loss
 		weights = torch.Tensor([0.005, 1.0, 1.0, 1.0, 1.0]).cuda().double()
-		loss_cls = torch.sum(self.criterion['cls'](result['cls'],labels)) /N
+		loss_cls = torch.sum(self.criterion['cls'](result['cls'],labels)) / N
 		loss_num += 1
 		#loss_loc = torch.sum(self.criterion['loc'](result['loc'],reg_targets,mask = reg_loss_mask)) / N
 
 		#Motion state
 		if not motion_labels is None:
-			loss_motion = torch.sum(self.criterion['cls'](result['state'],motion_labels)) /N
+			loss_motion = torch.sum(self.criterion['cls'](result['state'],motion_labels)) / N
 			loss_num += 1
 
 		loss_mask_num = torch.nonzero(reg_loss_mask.contiguous().view(-1,reg_loss_mask.shape[-1])).size(0)
@@ -169,16 +172,23 @@ class FaFModule(object):
 			ref_pose_rec_rotation = [ref_pose_rec['rotation'][0][batch], ref_pose_rec['rotation'][1][batch], ref_pose_rec['rotation'][2][batch], ref_pose_rec['rotation'][3][batch]]
 			ref_cs_rec_translation = [ref_cs_rec['translation'][0][batch], ref_cs_rec['translation'][1][batch], ref_cs_rec['translation'][2][batch]]
 			ref_cs_rec_rotation = [ref_cs_rec['rotation'][0][batch], ref_cs_rec['rotation'][1][batch], ref_cs_rec['rotation'][2][batch], ref_cs_rec['rotation'][3][batch]]
-			standard_global_from_car = transform_matrix(ref_pose_rec_translation, Quaternion(ref_pose_rec_rotation), inverse = inverse_flag)
-			standard_ref_car_from_current  = transform_matrix(ref_cs_rec_translation, Quaternion(ref_cs_rec_rotation), inverse = inverse_flag)
-			temp_matrix = np.dot(standard_global_from_car, standard_ref_car_from_current)
+			# standard_global_from_car = transform_matrix(ref_pose_rec_translation, Quaternion(ref_pose_rec_rotation), inverse = inverse_flag)
 			if inverse_flag == True:
+				standard_global_from_car = transform_matrix(ref_pose_rec_translation, Quaternion(ref_pose_rec_rotation), inverse = inverse_flag)
+			else:
+				standard_global_from_car = transform_matrix(ref_pose_rec_translation, Quaternion(ref_pose_rec_rotation), inverse = inverse_flag)
+			standard_ref_car_from_current  = transform_matrix(ref_cs_rec_translation, Quaternion(ref_cs_rec_rotation), inverse = inverse_flag)
+			if inverse_flag == True:
+				temp_matrix = np.dot(standard_ref_car_from_current, standard_global_from_car) #实际上是ref from car dot car from global
+			else: 
+				temp_matrix = np.dot(standard_global_from_car, standard_ref_car_from_current)
+			if inverse_flag == False:
 				temp_matrix = np.dot(standard_matrix[batch], temp_matrix)
+
 			matrix_list.append(temp_matrix)
 		return matrix_list
 
-	def step(self,data,batch_size, center_agent, forcast_num):
-		# batch_size = int(batch_size / torch.cuda.device_count())
+	def step(self,data,batch_size, center_agent, forecast_num, config):
 		bev_seq = data['bev_seq']
 		labels = data['labels']
 		reg_targets = data['reg_targets']
@@ -189,15 +199,16 @@ class FaFModule(object):
 		num_agent = data['num_agent']
 		current_pose_rec = data['current_pose_rec']
 		current_cs_rec = data['current_cs_rec']
+		supervise_data = data['supervise']
 
 		to_new_trans_mat_list = []
-		standard_matrix = self.vector_2_mat(batch_size, current_cs_rec[0][3], current_pose_rec[0][3], False)
+		standard_matrix = self.vector_2_mat(batch_size, current_cs_rec[0][forecast_num - 1], current_pose_rec[0][forecast_num - 1], True)
 		for iter_1 in range(len(current_cs_rec)):
 			to_new_trans_mat_list.append([])
 			for iter_2 in range(len(current_cs_rec[0])):
-				inverse_flag = True
-				if iter_1 == 0 and iter_2 == 3:
-					inverse_flag == False
+				inverse_flag = False
+				if iter_1 == 0 and iter_2 == forecast_num - 1:
+					inverse_flag == True
 				current_cs_rec_item = current_cs_rec[iter_1][iter_2]
 				current_pose_rec_item = current_pose_rec[iter_1][iter_2]
 				to_new_trans_mat_list[iter_1].append(self.vector_2_mat(batch_size, current_cs_rec_item, current_pose_rec_item, inverse_flag, standard_matrix))
@@ -219,7 +230,7 @@ class FaFModule(object):
 			x = self.encoder(bev_seq)
 			result = self.head(x)
 		else:
-			result = self.model(bev_seq, trans_matrices, num_agent, to_new_trans_mat_list, batch_size=batch_size, center_agent = center_agent, delta_t = delta_t)
+			result = self.model(bev_seq, trans_matrices, num_agent, to_new_trans_mat_list, supervise_data, batch_size=batch_size, center_agent = center_agent, delta_t = delta_t, forecast_num = forecast_num, config=config)
 
 		# labels = labels[:,-1]
 		# anchors = anchors[:, -1]
@@ -227,7 +238,7 @@ class FaFModule(object):
 		# reg_targets = reg_targets[:,-1]
 		labels = labels.view(result['cls'].shape[0],-1,result['cls'].shape[-1])
 
-		N = bev_seq.shape[0]
+		N = bev_seq.shape[0]/5
 
 		loss_collect = self.loss_calculator(result,anchors,reg_loss_mask,reg_targets,labels,N)
 		loss_num = loss_collect[0]
@@ -238,6 +249,9 @@ class FaFModule(object):
 		elif loss_num == 4:
 			loss_num,loss, loss_cls,loss_loc_1,loss_loc_2,loss_motion = loss_collect
 
+		if config.forecast_loss == 'True':
+			loss += result['forecast_loss']
+			fore_loss = result['forecast_loss']
 		if self.MGDA:
 			self.optimizer_encoder.zero_grad()
 			self.optimizer_head.zero_grad()
@@ -255,7 +269,10 @@ class FaFModule(object):
 			else:
 				return loss.item(),loss_cls.item(),loss_loc_1.item(),loss_loc_2.item()
 		else:
-			return loss.item(),loss_cls.item(),loss_loc.item()
+			if config.forecast_loss == 'True':
+				return loss.item(),loss_cls.item(),loss_loc.item(),result['forecast_loss']
+			else:
+				return loss.item(),loss_cls.item(),loss_loc.item()
 
 	def predict(self,data,validation=True):
 
@@ -319,7 +336,8 @@ class FaFModule(object):
 		else:
 			return class_selected
 
-	def predict_all(self,data,batch_size,validation=True, center_agent = 0):
+	def predict_all(self,data,batch_size,validation=True, center_agent = 0, forecast_num = 1, config = Config):
+		supervise_data = 0
 		delta_t = []
 		newest_time = torch.zeros((batch_size, 1))
 		for iter in range(batch_size):
@@ -337,13 +355,26 @@ class FaFModule(object):
 		trans_matrices = data['trans_matrices']
 		num_agent_tensor = data['num_agent']
 		num_sensor = num_agent_tensor[0, 0]
+		current_cs_rec = data['current_cs_rec']
+		current_pose_rec = data['current_pose_rec']
+		to_new_trans_mat_list = []
+		standard_matrix = self.vector_2_mat(batch_size, current_cs_rec[0][forecast_num-1], current_pose_rec[0][forecast_num-1], True)
+		for iter_1 in range(len(current_cs_rec)):
+			to_new_trans_mat_list.append([])
+			for iter_2 in range(len(current_cs_rec[0])):
+				inverse_flag = False
+				if iter_1 == 0 and iter_2 == 3:
+					inverse_flag == True
+				current_cs_rec_item = current_cs_rec[iter_1][iter_2]
+				current_pose_rec_item = current_pose_rec[iter_1][iter_2]
+				to_new_trans_mat_list[iter_1].append(self.vector_2_mat(batch_size, current_cs_rec_item, current_pose_rec_item, inverse_flag, standard_matrix))
 
 		if self.MGDA:
 			x = self.encoder(bev_seq)
 			result = self.head(x)
 		else:
 			with torch.no_grad():
-				result= self.model(bev_seq, trans_matrices, num_agent_tensor, batch_size=batch_size, center_agent = center_agent, delta_t = delta_t)
+				result= self.model(bev_seq, trans_matrices, num_agent_tensor, to_new_trans_mat_list, supervise_data = supervise_data, batch_size=batch_size, center_agent = center_agent, delta_t = delta_t, forecast_num = forecast_num, mode = 'val', config = config)
 			# result = self.model(bev_seq,vis=vis_maps,training=False)
         #
 		N = bev_seq.shape[0]
@@ -381,7 +412,7 @@ class FaFModule(object):
 		# for k in range(NUM_AGENT):
 		for k in range(1):
 			# bev_seq = torch.unsqueeze(data['bev_seq'][k, :, :, :, :], 0)
-			bev_seq = torch.unsqueeze(data['bev_seq'][k, 3, :, :, :,:], 0)
+			bev_seq = torch.unsqueeze(data['bev_seq'][k, forecast_num-1, :, :, :,:], 0)
 			if torch.nonzero(bev_seq).shape[0] == 0:
 				seq_results[k] = []
 			else:
