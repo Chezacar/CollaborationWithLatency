@@ -3,7 +3,7 @@ import torch.nn.functional as F
 import torch.nn as nn
 import torch
 from data.config_com import Config
-from utils.model import STPN, STPN_KD, MapExtractor, MotionNet, MotionRNN, Motion_Prediction_LSTM, forecast_lstm, lidar_encoder, lidar_decoder, lidar_decoder_kd, conv2DBatchNormRelu, Sparsemax, adafusionlayer,sigmoidfusionlayer, pairfusionlayer,pairfusionlayer_1, pairfusionlayer_2, pairfusionlayer_3 ,pairfusionlayer_4
+from utils.model import STPN, STPN_KD, MapExtractor, Motion_Prediction_LSTM_3D, MotionNet, MotionRNN, Motion_Prediction_LSTM, forecast_lstm, lidar_encoder, lidar_decoder, lidar_decoder_kd, conv2DBatchNormRelu, Sparsemax, adafusionlayer,sigmoidfusionlayer, pairfusionlayer,pairfusionlayer_1, pairfusionlayer_2, pairfusionlayer_3 ,pairfusionlayer_4
 import numpy as np
 import copy
 import torchgeometry as tgm
@@ -560,7 +560,8 @@ class FaFMIMONet_256_32_32(nn.Module):
         else:
             self.out_seq_len = config.pred_len
         self.box_code_size = config.box_code_size
-        self.Forecast_loss = nn.SmoothL1Loss(reduction='sum')
+        self.Forecast_loss = nn.SmoothL1Loss(reduction='sum',beta = 0.6)
+        # self.Forecast_loss = nn.L1Loss(reduction='sum')
         # self.KDLoss = nn.KLDivLoss(reduction = 'sum')
         self.KDLoss = nn.SmoothL1Loss(reduction='sum')
         # self.Forecast_loss = nn.MSELoss(reduction='sum')
@@ -585,6 +586,9 @@ class FaFMIMONet_256_32_32(nn.Module):
         elif config.forecast == 'MotionLSTM':
             self.forecast_flag = 'MotionLSTM'
             self.forecast = Motion_Prediction_LSTM(forecast_num = forecast_num)
+        elif config.forecast == 'MotionLSTM3D':
+            self.forecast_flag = 'MotionLSTM3D'
+            self.forecast = Motion_Prediction_LSTM_3D(forecast_num = forecast_num)
         elif config.forecast == 'MotionRNN':
             self.forecast_flag = 'MotionRNN'
             self.forecast = MotionRNN(forecast_num = forecast_num)
@@ -700,7 +704,7 @@ class FaFMIMONet_256_32_32(nn.Module):
 
         # x_s_3_shape_1, x_s_3_shape_2, x_s_3_shape_3, x_s_3_shape_4 = x_s_3.shape
 
-        if self.forecast_flag == 'LSTM' or self.forecast_flag == 'MotionLSTM' or (self.forecast_flag =='MotionRNN'):
+        if self.forecast_flag == 'LSTM' or self.forecast_flag == 'MotionLSTM' or (self.forecast_flag =='MotionRNN') or (self.forecast_flag =='MotionLSTM3D'):
             x_feature_list = []
             sum_size_a, sum_size_b, sum_size_c, sum_size_d = x_s_3.size()
             x_sum_3 = torch.zeros((sum_size_a, forecast_num, sum_size_b, sum_size_c, sum_size_d)).to(bevs.device)

@@ -580,25 +580,25 @@ def visualization(config, data, savename=None, map_result_0_5 = 0, map_result_0_
                 c_x, c_y = np.mean(corners, axis=0)
                 corners = np.concatenate([corners, corners[[0]]])
 
-                if p == 0:
-                    if config.motion_state:
-                        if cls_pred_state[corner_id] == 0:
-                            color = 'y'
-                        else:
-                            color = 'r'
-                    else:
-                        color = 'r'
-                    plt.plot(corners[:, 0], corners[:, 1], c=color, linewidth=0.8, zorder=15)
-                    plt.scatter(c_x, c_y, s=3, c=color, zorder=15)
-                    # plt.scatter(corners[0,0], corners[0,1], s=10,c = 'r')
-                    plt.plot([c_x, (corners[-2][0] + corners[0][0]) / 2.], [c_y, (corners[-2][1] + corners[0][1]) / 2.],
-                             linewidth=0.8, c=color, zorder=15)
-                else:
-                    color = 'r'
-                    if config.motion_state:
-                        if cls_pred_state[corner_id] == 0:
-                            continue
-                    plt.scatter(c_x, c_y, s=3, c=color, zorder=15)
+                # if p == 0:
+                #     if config.motion_state:
+                #         if cls_pred_state[corner_id] == 0:
+                #             color = 'y'
+                #         else:
+                #             color = 'r'
+                #     else:
+                #         color = 'r'
+                #     plt.plot(corners[:, 0], corners[:, 1], c=color, linewidth=0.8, zorder=15)
+                #     plt.scatter(c_x, c_y, s=3, c=color, zorder=15)
+                #     # plt.scatter(corners[0,0], corners[0,1], s=10,c = 'r')
+                #     plt.plot([c_x, (corners[-2][0] + corners[0][0]) / 2.], [c_y, (corners[-2][1] + corners[0][1]) / 2.],
+                #              linewidth=0.8, c=color, zorder=15)
+                # else:
+                #     color = 'r'
+                #     if config.motion_state:
+                #         if cls_pred_state[corner_id] == 0:
+                #             continue
+                #     plt.scatter(c_x, c_y, s=3, c=color, zorder=15)
 
         for k in range(len(gt_max_iou_idx)):
 

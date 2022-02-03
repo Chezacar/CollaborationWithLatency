@@ -392,7 +392,14 @@ def main_worker(rank, world_size, config, config_global, args):
                 trainset.latency_lambda = latency_lambda
             else: 
                 latency_lambda = args.latency_lambda
-                latency_lambda = [int(np.ceil(np.random.exponential(latency_lambda[0]))), int(np.ceil(np.random.exponential(latency_lambda[1]))), int(np.ceil(np.random.exponential(latency_lambda[2]))), int(np.ceil(np.random.exponential(latency_lambda[3]))), int(np.ceil(np.random.exponential(latency_lambda[4])))]
+                latency_num = np.zeros(5)
+                for i in range(5):
+                    rand_num = int(np.ceil(np.random.exponential(latency_lambda[1])))
+                    if rand_num <= 10:
+                        latency_num[i] = rand_num
+                    else:
+                        latency_num[i] = 10
+                latency_lambda = [0, latency_num[1], latency_num[2], latency_num[3], latency_num[4]]
                 trainset.latency_lambda = latency_lambda
             
             trainset.seq_dict[0] = trainset.get_data_dict(trainset.dataset_root_peragent)
@@ -559,11 +566,11 @@ def main_worker(rank, world_size, config, config_global, args):
                     print("Running total KD loss: {}".format(kd_loss))
                 if config.forecast_loss == 'True':
                     print("Running total fore loss: {}".format(running_loss_fore.avg))
-            tbwriter.add_scalar('total_loss', running_loss_disp.avg)
-            tbwriter.add_scalar('total_loss', running_loss_class.avg)
-            tbwriter.add_scalar('total_loss', running_loss_loc.avg)
+            tbwriter.add_scalar('total_loss', running_loss_disp.avg,epoch)
+            tbwriter.add_scalar('classification_loss', running_loss_class.avg,epoch)
+            tbwriter.add_scalar('location_loss', running_loss_loc.avg,epoch)
             if config.forecast_loss == 'True':
-                tbwriter.add_scalar('total_loss', running_loss_fore.avg)
+                tbwriter.add_scalar('Prediction_loss', running_loss_fore.avg,epoch)
             if config.forecast_loss == 'True':
                 print("{}\t{}\t{}\t{}\t  Takes {} s\n".format(running_loss_disp, running_loss_class, running_loss_loc,running_loss_fore,
                                                      str(time.time() - t)))

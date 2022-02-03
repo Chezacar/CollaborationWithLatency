@@ -754,7 +754,7 @@ class FaFMIMONet_256_32_32(nn.Module):
 
         if (self.forecast_flag == 'LSTM') or (self .forecast_flag =='MotionLSTM') or (self.forecast_flag =='MotionRNN'):
             x_feature_list = []
-            sum_size_a, sum_size_b, sum_size_c, sum_size_d = x_s_3.size()
+            sum_size_a, sum_size_b, sum_size_c, sum_size_d = x_3.size()
             x_sum_3 = torch.zeros((sum_size_a, forecast_num, sum_size_b, sum_size_c, sum_size_d)).to(bevs.device)
             for i in range(forecast_num):
                 _, _, _, x_sum_3[:,i], _ = self.u_encoder(bevs[:,i])
@@ -788,7 +788,7 @@ class FaFMIMONet_256_32_32(nn.Module):
         if self.forecast_flag == 'MotionNet':
             x_feature_list = [] # 按照[b0a0,b0a1,...,b1a0,...bna5]排列
             x_center_feat_list = [] 
-            sum_size_a, sum_size_b, sum_size_c, sum_size_d = x_s_3.size()
+            sum_size_a, sum_size_b, sum_size_c, sum_size_d = x_3.size()
             x_sum_3 = torch.zeros((sum_size_a, forecast_num, sum_size_b, sum_size_c, sum_size_d)).to(bevs.device)
             for i in range(forecast_num):
                 _, _, _, x_sum_3[:,i], _ = self.u_encoder(bevs[:,i])
@@ -815,29 +815,11 @@ class FaFMIMONet_256_32_32(nn.Module):
                 x_3_feature = self.forecast(x_feature_toforecast, delta_t)
             else:
                 x_3_feature = x_feature_toforecast[:,-1]
-                    # if delta_t[batch][inbatch] > 0 and forecast_num > 1:
-                    #     x_feature_list.append(self.forecast(x_feature_toforecast, delta_t, x_feature_list))
-                    #     x_feature_list.append()
-                    # else:
-                    #     x_feature_list.append(torch.unsqueeze(x_3_temp[-1], 0))
-
             
             # device = bevs.device
             size = (1, 256, 32, 32)
             padding_feat = torch.zeros((256,32,32)).cuda()
 
-
-            # feat_maps = x_3
-            # print(feat_maps.shape, x_3.shape, x_2.shape, x_1.shape)
-
-            # get feat maps for each agent [10 512 16 16] -> [2 5 512 16 16]
-            # feat_map = {}
-            # feat_list = []
-
-            # for i in range(self.agent_num):
-            #     feat_map[i] = torch.unsqueeze(feat_maps[batch_size * i:batch_size * (i + 1)], 1)
-            #     if torch.max(feat_map[i]) > 0:
-            #         feat_list.append(feat_map[i])
             feat_list = []
             _, a,b,c = x_3_feature.shape
             for i in range(batch_size):
@@ -890,6 +872,16 @@ class FaFMIMONet_256_32_32(nn.Module):
         else:
             x, _, _, _, _ = self.decoder(x[0:batch_size],x_1[0:batch_size],x_2[0:batch_size],local_com_mat_update,x_4[0:batch_size],batch_size)
 
+        # # if scene[0][0].split('/')[-1].split('_')[0] == '84':
+        #     # print("8484")
+        # if 1:
+        #     compare_dict = {}
+        #     compare_dict['Forecast_model'] = self.forecast_flag
+        #     compare_dict['scene'] = scene[0][0].split('/')[-1]
+        #     compare_dict['x'] = [x, x_1, x_2, x_3, local_com_mat_update]
+        #     compare_dict['feat_list'] = feat_list
+        #     compare_dict_save_name = './test_path/' + compare_dict['Forecast_model'] + '_' + compare_dict['scene'] + '.pth'
+        #     torch.save(compare_dict, compare_dict_save_name)
         # x = self.decoder(x,x_1,x_2,feat_fuse_mat,x_4,batch_size)
         # x = torch.stack([x[i * self.agent_num] for i in range(batch_size)])
         # vis = vis.permute(0, 3, 1, 2)

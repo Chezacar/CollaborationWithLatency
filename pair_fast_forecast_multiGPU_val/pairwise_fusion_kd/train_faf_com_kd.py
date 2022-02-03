@@ -691,7 +691,7 @@ def main(config, config_global, args):
                     check_folder(seq_save)
                     seq_save = seq_save  + '/' + scene
                     check_folder(seq_save)
-                    np.save(os.path.join(seq_save, pth_save), temp)
+                    # np.save(os.path.join(seq_save, pth_save), temp)
                     visualization(config, temp, os.path.join(seq_save, idx_save),map_result_0_5, map_result_0_7)
 
             print("Validation scene {}, at frame {}".format(seq_name, idx))

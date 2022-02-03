@@ -105,20 +105,24 @@ class Motion_Prediction_LSTM(nn.Module):
         # x_shape = [self.forecast_num _32 _32_256]
         # x = F.relu(self.bn_pre_1(self.conv_pre_1(x)))
         # x = F.relu(self.bn_pre_2(self.conv_pre_2(x)))
-        h = x[-1]
+        h = x[0]
         c = torch.zeros((x[0].shape)).to(x.device)
         
         for i in range(self.forecast_num):
             h,c = self.lstmcell(x[i], (h,c))
         # cell_class_pred = self.cell_classify(stpn_out)
-        for t in range(int(self.delta_t)):
+        for t in range(int(self.delta_t - 1)):
             h,c = self.lstmcell(h, (h,c))
         # Motion State Classification head
         # state_class_pred = self.state_classify(stpn_out)
         w = self.time_weight(torch.cat([x[-1].unsqueeze(0), h],1), delta_t)
         w = 0.1 * int(delta_t - 1) * w
-        w = torch.tanh(w)
-        x = w * h + (1-w) * x[-1]
+        w = torch.tanh(0.1 * int(delta_t - 1) * w)
+        if delta_t > 0:
+            res = w * h + (1-w) * x[-1]
+        else: 
+            res = x[-1].unsqueeze(0)
+        # print((res - x[-1]).max())
         # x = h
         # x = F.relu(self.bn_after_1(self.conv_after_1(x)))
         # x = F.relu(self.bn_after_2(self.conv_after_2(x)))
@@ -127,7 +131,7 @@ class Motion_Prediction_LSTM(nn.Module):
         # disp = disp.view(-1, 2, stpn_out.size(-2), stpn_out.size(-1))
 
         # return disp, cell_class_pred, state_class_pred
-        return x
+        return res
 
 class MotionLSTM(nn.Module):
     def __init__(self, spatial_size, input_channel_size, hidden_size = 0):
@@ -466,7 +470,7 @@ class ModulatedTime(nn.Module):
         # self.bn4 = nn.BatchNorm2d(1)
     def forward(self, x, delta_t):
         a,b,c,d = x.size()
-        y = torch.ones((1,1,c,d)).to(x.device)
+        y = delta_t * torch.ones((1,1,c,d)).to(x.device)
         t_y = F.relu(self.convl1(y))
         t_y = F.relu(self.convl2(t_y))
         t_x = F.relu(self.conv1(x))
@@ -1667,7 +1671,7 @@ class pairfusionlayer_2(nn.Module):
 
 
         fusion_weight = F.softmax(fusion_weight,dim=0).cuda()
-        if 0:
+        if 1:
             weight_save = fusion_weight.to('cpu')
             weight_save = np.array(weight_save)
             time_save = time.localtime(time.time())
@@ -1688,6 +1692,31 @@ class pairfusionlayer_2(nn.Module):
             ref = weight_save[0].max()
             for i in range(weight_save.shape[0]):
                 weight_pic = weight_save[i][0] / ref
+                pic = sns.heatmap(data = weight_pic, vmax = 1, vmin = 0, linewidths=.5, cmap="YlGnBu")
+                pic_save = pic.get_figure()
+                pic_save.savefig(path_save + str(i) + '.jpeg')
+                plt.clf()
+        if 1:
+            feat_save = torch.sum(x,1).to('cpu')
+            feat_save = np.array(feat_save)
+            time_save = time.localtime(time.time())
+            scene_id = scene[0].split('/')[-1].split('_')[0]
+            scene_time = scene[0].split('/')[-1].split('_')[-1]
+            path_save = './visualization/feature_heatmap/' 
+            if not os.path.exists(path_save):
+                os.mkdir(path_save)           
+            path_save = path_save + str(time_save.tm_mon) + str(time_save.tm_mday) + '_' + forecast_model + '_' + str(int(delta_t[0][1])) + '/'
+            if not os.path.exists(path_save):
+                os.mkdir(path_save)     
+            path_save = path_save + scene_id + '/'
+            if not os.path.exists(path_save):
+                os.mkdir(path_save)    
+            path_save = path_save + scene_time + '/'
+            if not os.path.exists(path_save):
+                os.mkdir(path_save)    
+            ref = feat_save.max()
+            for i in range(feat_save.shape[0]):
+                weight_pic = feat_save[i] / ref
                 pic = sns.heatmap(data = weight_pic, vmax = 1, vmin = 0, linewidths=.5, cmap="YlGnBu")
                 pic_save = pic.get_figure()
                 pic_save.savefig(path_save + str(i) + '.jpeg')

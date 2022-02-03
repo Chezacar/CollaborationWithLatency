@@ -94,18 +94,18 @@ class Motion_Prediction_LSTM(nn.Module):
         # x_shape = [self.forecast_num _32 _32_256]
         # x = F.relu(self.bn_pre_1(self.conv_pre_1(x)))
         # x = F.relu(self.bn_pre_2(self.conv_pre_2(x)))
-        h = x[-1]
+        h = x[0]
         c = torch.zeros((x[0].shape)).to(x.device)
         
         for i in range(self.forecast_num):
             h,c = self.lstmcell(x[i], (h,c))
         # cell_class_pred = self.cell_classify(stpn_out)
-        for t in range(int(self.delta_t)):
+        for t in range(int(self.delta_t - 1)):
             h,c = self.lstmcell(h, (h,c))
         # Motion State Classification head
         # state_class_pred = self.state_classify(stpn_out)
         w = self.time_weight(torch.cat([x[-1].unsqueeze(0), h],1), delta_t)
-        w = torch.tanh(0.1 * int(delta_t - 1) * w)
+        # w = torch.tanh(0.1 * int(delta_t - 0.8) * w)
         # print("delta_t:", delta_t)
         # print("w.max:", w.max())
         if delta_t > 0:
@@ -144,7 +144,7 @@ class ModulatedTime(nn.Module):
         # self.bn4 = nn.BatchNorm2d(1)
     def forward(self, x, delta_t):
         a,b,c,d = x.size()
-        y = torch.ones((1,1,c,d)).to(x.device)
+        y = delta_t * torch.ones((1,1,c,d)).to(x.device)
         t_y = F.relu(self.convl1(y))
         t_y = F.relu(self.convl2(t_y))
         t_x = F.relu(self.conv1(x))
@@ -220,6 +220,147 @@ class MotionLSTM(nn.Module):
         # hidden_seq = torch.cat(hidden_seq, dim=0) 
         # hidden_seq = hidden_seq.transpose(0, 1).contiguous() 
         return (h_out, c_out)
+
+class Motion_Prediction_LSTM_3D(nn.Module):
+    def __init__(self, channel_size = 256, spatial_size = 32, compressed_size = 256, motion_category_num=2, delta_t = 5, forecast_num = 3):
+        super(Motion_Prediction_LSTM_3D, self).__init__()
+        # self.Pre_Conv = Predict_Conv(input_size=256, height_feat_size=64)
+        # self.After_Conv = Predict_Conv(input_size=64, height_feat_size=256)
+        self.ratio = int(math.sqrt(channel_size / compressed_size))
+        self.delta_t = delta_t
+        self.forecast_num = forecast_num
+        self.spatial_size = spatial_size
+        self.compressed_size = compressed_size
+        self.channel_size = channel_size
+        # self.conv_pre_1 = nn.Conv2d(self.channel_size, self.ratio * self.compressed_size, kernel_size=3, stride=1, padding=1)
+        # self.conv_pre_2 = nn.Conv2d(self.ratio * self.compressed_size, self.compressed_size, kernel_size=3, stride=1, padding=1)
+        # self.bn_pre_1 = nn.BatchNorm2d(self.ratio * self.compressed_size)
+        # self.bn_pre_2 = nn.BatchNorm2d(self.compressed_size)
+        # self.conv_pre_3 = nn.Conv2d(16, self.compressed_size, kernel_size=3, stride=1, padding=1)
+        # self.conv_after_1 = nn.Conv2d(self.compressed_size, self.ratio * self.compressed_size, kernel_size=3, stride=1, padding=1)
+        # self.conv_after_2 = nn.Conv2d(self.ratio * self.compressed_size, self.channel_size, kernel_size=3, stride=1, padding=1)
+        # self.bn_after_1 = nn.BatchNorm2d(self.ratio * self.compressed_size)
+        # self.bn_after_2 = nn.BatchNorm2d(self.channel_size)
+        self.lstmcell = MotionLSTM_3D(32, self.compressed_size)
+        self.time_weight = ModulatedTime(input_channel = 2 * self.compressed_size)
+
+        
+    def forward(self, x, delta_t):
+        device = x.device 
+        # x = self.Pre_Conv(x)
+        self.delta_t = delta_t
+        # Cell Classification head
+        # x_shape = [self.forecast_num _32 _32_256]
+        # if self.compressed_size != 256:
+            # x = F.relu(self.bn_pre_1(self.conv_pre_1(x)))
+            # x = F.relu(self.bn_pre_2(self.conv_pre_2(x)))
+        _,a,b,d = x.shape
+        # print(a,b,d)
+        h = x[0]
+        c = torch.zeros((x[0].shape)).to(x.device)
+        h_d = torch.zeros((delta_t.int() + int(self.forecast_num),a,b,d)).to(device)
+        h_d[0:self.forecast_num] = x.clone()
+        input_d = torch.zeros((int(delta_t), self.forecast_num, a, b, d)).to(device)
+        # for i in range(self.forecast_num):
+        # h,c = self.lstmcell(x[-1],x,(h,c))
+        # cell_class_pred = self.cell_classify(stpn_out)
+        for t in range(int(self.delta_t)):
+            input_d[t] = h_d[t:t+self.forecast_num].clone()
+            h,c = self.lstmcell(h, input_d[t], (h,c))
+            # h,c = self.lstmcell(h, x, (h,c))
+            h_d[t + self.forecast_num] = h.clone()
+        # Motion State Classification head
+        # state_class_pred = self.state_classify(stpn_out)
+        w = self.time_weight(torch.cat([x[-1].unsqueeze(0), h],1), delta_t)
+        # w = torch.tanh(0.1 * int(delta_t - 0.8) * w)
+        # print("delta_t:", delta_t)
+        # print("w.max:", w.max())
+        if delta_t > 0:
+            res = w * h + (1-w) * x[-1]
+        else: 
+            res = x[-1].unsqueeze(0)
+        # print('res', (res - x[-1]).sum())
+        # res = self.After_Conv(res)
+        # if self.compressed_size != 256:
+            # res = F.relu(self.bn_after_1(self.conv_after_1(res)))
+            # res = F.relu(self.bn_after_2(self.conv_after_2(res)))
+        # Motion Displacement prediction
+        # disp = self.motion_pred(stpn_out)
+        # disp = disp.view(-1, 2, stpn_out.size(-2), stpn_out.size(-1))
+        # del h,c, h_d
+        # return disp, cell_class_pred, state_class_pred
+        return res
+
+class MotionLSTM_3D(nn.Module):
+    def __init__(self, spatial_size, input_channel_size, hidden_size = 0):
+        super().__init__()
+        self.input_channel_size = input_channel_size  # channel size
+        self.hidden_size = hidden_size
+        self.spatial_size = spatial_size
+
+        #i_t 
+        # self.U_i = nn.Parameter(torch.Tensor(input_channel_size, hidden_size)) 
+        # self.V_i = nn.Parameter(torch.Tensor(hidden_size, hidden_size)) 
+        
+        self.U_i = STPN_MotionLSTM(height_feat_size = self.input_channel_size)
+        self.V_i = STPN_MotionLSTM(height_feat_size = self.input_channel_size)
+        self.b_i = nn.Parameter(torch.Tensor(1, self.input_channel_size, self.spatial_size, self.spatial_size))
+        
+        # #f_t 
+        # self.U_f = nn.Parameter(torch.Tensor(input_channel_size, hidden_size)) 
+        # self.V_f = nn.Parameter(torch.Tensor(hidden_size, hidden_size)) 
+        # self.b_f = nn.Parameter(torch.Tensor(hidden_size)) 
+        self.U_f = STPN_MotionLSTM(height_feat_size = self.input_channel_size)
+        self.V_f = STPN_MotionLSTM(height_feat_size = self.input_channel_size)
+        self.b_f = nn.Parameter(torch.Tensor(1, self.input_channel_size, self.spatial_size, self.spatial_size))
+
+        # #c_t 
+        # self.U_c = nn.Parameter(torch.Tensor(input_channel_size, hidden_size)) 
+        # self.V_c = nn.Parameter(torch.Tensor(hidden_size, hidden_size)) 
+        # self.b_c = nn.Parameter(torch.Tensor(hidden_size)) 
+        # self.U_c = STPN_MotionLSTM(height_feat_size = self.input_channel_size)
+        # self.V_c = STPN_MotionLSTM(height_feat_size = self.input_channel_size)
+        self.hatC = STPN_MotionNet(height_feat_size=self.input_channel_size)
+        self.b_c = nn.Parameter(torch.Tensor(1, self.input_channel_size, self.spatial_size, self.spatial_size))
+
+        # #o_t 
+        # self.U_o = nn.Parameter(torch.Tensor(input_channel_size, hidden_size)) 
+        # self.V_o = nn.Parameter(torch.Tensor(hidden_size, hidden_size)) 
+        # self.b_o = nn.Parameter(torch.Tensor(hidden_size)) 
+        self.U_o = STPN_MotionLSTM(height_feat_size = self.input_channel_size)
+        self.V_o = STPN_MotionLSTM(height_feat_size = self.input_channel_size)
+        self.b_o = nn.Parameter(torch.Tensor(1, self.input_channel_size, self.spatial_size, self.spatial_size))
+
+        # self.init_weights()
+
+    # def init_weights(self):
+    #     stdv = 1.0 / math.sqrt(self.hidden_size)
+    #     for weight in self.parameters():
+    #         weight.data.uniform_(-stdv, stdv)
+
+    def forward(self,x,x_s,init_states=None): 
+        """ 
+        assumes x.shape represents (batch_size, sequence_size, input_channel_size) 
+        """ 
+        h, c = init_states 
+        i = torch.sigmoid(self.U_i(x) + self.V_i(h) + self.b_i) 
+        f = torch.sigmoid(self.U_f(x) + self.V_f(h) + self.b_f) 
+        # g = torch.tanh(self.U_c(x) + self.V_c(h) + self.b_c) 
+        g = torch.tanh(self.hatC(x_s.unsqueeze(0)))
+        o = torch.sigmoid(self.U_o(x) + self.V_o(x) + self.b_o) 
+        c_out = f * c + i * g 
+        h_out = o *  torch.tanh(c_out) 
+
+        # hidden_seq.append(h_t.unsqueeze(0)) 
+
+        # #reshape hidden_seq p/ retornar 
+        # hidden_seq = torch.cat(hidden_seq, dim=0) 
+        # hidden_seq = hidden_seq.transpose(0, 1).contiguous() 
+        return (h_out, c_out)
+
+
+
+
 
 class STPN_MotionLSTM(nn.Module):
     def __init__(self, height_feat_size = 16):

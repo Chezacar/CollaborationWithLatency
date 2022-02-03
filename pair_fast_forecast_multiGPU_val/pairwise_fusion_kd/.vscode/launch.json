@@ -12,9 +12,9 @@
             "console": "integratedTerminal",
             "args": [
                 "--mode",
-                "train",
+                "val",
                 "--data",
-                "/GPFS/data/zxlei/dataset/test1/train/",
+                "/GPFS/data/zxlei/dataset/test1/val/",
                 "--logpath",
                 "/GPFS/data/zxlei/CollaborativePerception/Forcast/LatencyVersion/pairwise_fast/pairwise_fusion_kd/log",
                 "--batch",
@@ -28,7 +28,8 @@
                 "--resume",
                 // "/GPFS/data/zxlei/CollaborativePerception/Forcast/LatencyVersion/pair_fast_forecast_distributed/pairwise_fusion_kd/log/MotionLSTM/12141721/epoch_185.pth",
                 // "/DB/rhome/slren/data_gpfs/log/train_single_seq/2021-09-05_22-06-09/epoch_100.pth",
-                "/GPFS/data/zxlei/CollaborativePerception/Forcast/LatencyVersion/pair_fast_forecast_distributed/pairwise_fusion_kd/log/baseline/newraw/epoch_100.pth",
+                // "/GPFS/data/zxlei/CollaborativePerception/Forcast/LatencyVersion/pair_fast_forecast_distributed/pairwise_fusion_kd/log/baseline/newraw/epoch_100.pth",
+                "/GPFS/data/zxlei/CollaborativePerception/Forcast/LatencyVersion/pair_fast_forecast_distributed/pairwise_fusion_kd/log/MotionLSTM/01011915/epoch_470.pth",
                 "--nepoch",
                 "400",
                 "--forecast_model",
@@ -36,6 +37,8 @@
                 "MotionLSTM",
                 // "MotionNet",
                 "--forecast_KD",
+                "True",
+                "--visualization",
                 "True"
                 // "--latency_lambda",
                 // "5 5 5 5 5"
@@ -48,7 +51,7 @@
                 // "--resume_teacher",
                 // "/DATA_SSD/slren/teacher_aug_batch_4_epoch_100.pth"
             ],
-            "env": {"CUDA_VISIBLE_DEVICES": "1"}
+            "env": {"CUDA_VISIBLE_DEVICES": "2"}
         }
     ]
 }
